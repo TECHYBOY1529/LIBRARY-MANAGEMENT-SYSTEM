@@ -1,0 +1,386 @@
+import re
+from datetime import date, datetime
+
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+from sqlalchemy.exc import IntegrityError
+
+from .extensions import db
+from .models import Author, Book, BookCopy, Category, Loan, Publisher, Reservation, User, utcnow
+from .security import roles_required
+from .services import audit, cancel_reservation, issue_book, return_book
+
+bp = Blueprint("catalog", __name__)
+LOOKUPS = {"authors": Author, "categories": Category, "publishers": Publisher}
+
+
+@bp.get("/books")
+@login_required
+def books():
+    query = Book.query.join(Book.author).join(Book.category).join(Book.publisher)
+    q = request.args.get("q", "").strip()
+    category_id = request.args.get("category", type=int)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(db.or_(Book.title.ilike(like), Book.isbn.ilike(like), Author.name.ilike(like)))
+    if category_id:
+        query = query.filter(Book.category_id == category_id)
+    if request.args.get("availability") == "available":
+        query = query.filter(Book.copies.any(status="available"))
+    pagination = query.order_by(Book.title).paginate(page=request.args.get("page", 1, type=int), per_page=15, error_out=False)
+    return render_template("books.html", pagination=pagination, categories=Category.query.order_by(Category.name).all(), q=q)
+
+
+def book_form_data():
+    isbn = request.form.get("isbn", "").strip()
+    title = request.form.get("title", "").strip()
+    year = request.form.get("publication_year", type=int)
+    author_id = request.form.get("author_id", type=int)
+    category_id = request.form.get("category_id", type=int)
+    publisher_id = request.form.get("publisher_id", type=int)
+    if not re.fullmatch(r"(?:\d{10}|\d{13}|[0-9Xx-]{10,20})", isbn):
+        raise ValueError("Enter a valid ISBN (10 or 13 digits, hyphens allowed).")
+    if not title or len(title) > 240:
+        raise ValueError("Title is required and must be at most 240 characters.")
+    if not year or year < 1450 or year > date.today().year + 1:
+        raise ValueError("Enter a valid publication year.")
+    if not all([db.session.get(Author, author_id), db.session.get(Category, category_id), db.session.get(Publisher, publisher_id)]):
+        raise ValueError("Choose an existing author, category, and publisher.")
+    return {"isbn": isbn, "title": title, "publication_year": year, "author_id": author_id,
+            "category_id": category_id, "publisher_id": publisher_id}
+
+
+@bp.route("/books/new", methods=["GET", "POST"])
+@roles_required("admin")
+def book_new():
+    if request.method == "POST":
+        try:
+            data = book_form_data()
+            count = request.form.get("copies", 0, type=int)
+            if count < 1 or count > 500:
+                raise ValueError("Initial copy count must be between 1 and 500.")
+            if Book.query.filter_by(isbn=data["isbn"]).first():
+                raise ValueError("That ISBN is already in the catalog.")
+            book = Book(**data)
+            db.session.add(book)
+            db.session.flush()
+            for index in range(count):
+                db.session.add(BookCopy(book_id=book.id, barcode=f"LIB-{book.id:05d}-{index + 1:03d}"))
+            audit(current_user, "create_book", "book", book.id, f"ISBN {book.isbn}; {count} copies")
+            db.session.commit()
+            flash("Book and copies added to the catalog.", "success")
+            return redirect(url_for("catalog.books"))
+        except ValueError as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+        except IntegrityError:
+            db.session.rollback()
+            flash("Could not save the book. Check that its ISBN and barcode are unique.", "danger")
+    return render_template("book_form.html", book=None, authors=Author.query.order_by(Author.name).all(), categories=Category.query.order_by(Category.name).all(), publishers=Publisher.query.order_by(Publisher.name).all())
+
+
+@bp.route("/books/<int:book_id>/edit", methods=["GET", "POST"])
+@roles_required("admin")
+def book_edit(book_id):
+    book = db.get_or_404(Book, book_id)
+    if request.method == "POST":
+        try:
+            data = book_form_data()
+            if Book.query.filter(Book.isbn == data["isbn"], Book.id != book.id).first():
+                raise ValueError("That ISBN is already in the catalog.")
+            add_count = request.form.get("add_copies", 0, type=int)
+            if add_count < 0 or add_count > 500:
+                raise ValueError("Copies to add must be between 0 and 500.")
+            for key, value in data.items():
+                setattr(book, key, value)
+            existing = len(book.copies)
+            for index in range(add_count):
+                db.session.add(BookCopy(book_id=book.id, barcode=f"LIB-{book.id:05d}-{existing + index + 1:03d}"))
+            audit(current_user, "edit_book", "book", book.id, f"added copies={add_count}")
+            db.session.commit()
+            flash("Book details saved.", "success")
+            return redirect(url_for("catalog.books"))
+        except ValueError as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+        except IntegrityError:
+            db.session.rollback()
+            flash("Could not save changes. Check the ISBN and generated barcodes.", "danger")
+    return render_template("book_form.html", book=book, authors=Author.query.order_by(Author.name).all(), categories=Category.query.order_by(Category.name).all(), publishers=Publisher.query.order_by(Publisher.name).all())
+
+
+@bp.post("/books/<int:book_id>/delete")
+@roles_required("admin")
+def book_delete(book_id):
+    book = db.get_or_404(Book, book_id)
+    if Loan.query.join(BookCopy).filter(BookCopy.book_id == book.id).first():
+        flash("This title has loan history and cannot be deleted. Mark its copies as lost or in maintenance instead.", "warning")
+        return redirect(url_for("catalog.books"))
+    title = book.title
+    try:
+        db.session.delete(book)
+        audit(current_user, "delete_book", "book", book.id, title)
+        db.session.commit()
+        flash("Book removed from the catalog.", "success")
+    except IntegrityError:
+        db.session.rollback()
+        flash("The book could not be deleted because other records refer to it.", "danger")
+    return redirect(url_for("catalog.books"))
+
+
+@bp.route("/metadata/<kind>", methods=["GET", "POST"])
+@roles_required("admin")
+def metadata(kind):
+    model = LOOKUPS.get(kind)
+    if not model:
+        abort(404)
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name or len(name) > 160:
+            flash("Enter a name no longer than 160 characters.", "danger")
+        else:
+            item_id = request.form.get("item_id", type=int)
+            item = db.session.get(model, item_id) if item_id else model()
+            if not item:
+                abort(404)
+            item.name = name
+            db.session.add(item)
+            audit(current_user, "save_metadata", kind, item.id, name)
+            try:
+                db.session.commit()
+                flash("Saved.", "success")
+            except IntegrityError:
+                db.session.rollback()
+                flash("That name already exists or is in use.", "danger")
+        return redirect(url_for("catalog.metadata", kind=kind))
+    edit_id = request.args.get("edit", type=int)
+    editing = db.session.get(model, edit_id) if edit_id else None
+    return render_template("metadata.html", kind=kind, items=model.query.order_by(model.name).all(), editing=editing)
+
+
+@bp.post("/metadata/<kind>/<int:item_id>/delete")
+@roles_required("admin")
+def metadata_delete(kind, item_id):
+    model = LOOKUPS.get(kind)
+    if not model:
+        abort(404)
+    item = db.session.get(model, item_id) or abort(404)
+    db.session.delete(item)
+    try:
+        audit(current_user, "delete_metadata", kind, item.id, item.name)
+        db.session.commit()
+        flash("Removed.", "success")
+    except IntegrityError:
+        db.session.rollback()
+        flash("This value is assigned to a book and cannot be removed.", "warning")
+    return redirect(url_for("catalog.metadata", kind=kind))
+
+
+@bp.route("/members", methods=["GET", "POST"])
+@roles_required("admin")
+def members():
+    if request.method == "POST":
+        name = request.form.get("full_name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        if len(name) < 2 or len(name) > 120 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or len(email) > 255 or not 10 <= len(password) <= 256:
+            flash("Enter a valid name, email and a password of 10–256 characters.", "danger")
+        elif User.query.filter_by(email=email).first():
+            flash("That email is already registered.", "danger")
+        else:
+            user = User(full_name=name, email=email, role="member")
+            user.set_password(password)
+            db.session.add(user)
+            db.session.flush()
+            audit(current_user, "register_member", "user", user.id)
+            db.session.commit()
+            flash("Member registered.", "success")
+            return redirect(url_for("catalog.members"))
+    rows = User.query.filter_by(role="member").order_by(User.full_name).paginate(page=request.args.get("page", 1, type=int), per_page=20, error_out=False)
+    return render_template("members.html", pagination=rows)
+
+
+@bp.post("/members/<int:user_id>/update")
+@roles_required("admin")
+def member_update(user_id):
+    user = User.query.filter_by(id=user_id, role="member").first_or_404()
+    name = request.form.get("full_name", "").strip()
+    email = request.form.get("email", "").strip().lower()
+    if len(name) < 2 or len(name) > 120 or len(email) > 255 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        flash("Enter a valid member name and email.", "danger")
+    elif User.query.filter(User.email == email, User.id != user.id).first():
+        flash("That email is already in use.", "danger")
+    else:
+        user.full_name, user.email = name, email
+        user.active = request.form.get("active") == "on"
+        audit(current_user, "update_member", "user", user.id)
+        db.session.commit()
+        flash("Member record updated.", "success")
+    return redirect(url_for("catalog.members"))
+
+
+@bp.route("/loans", methods=["GET", "POST"])
+@roles_required("admin")
+def loans():
+    if request.method == "POST":
+        member_id = request.form.get("member_id", type=int)
+        book_id = request.form.get("book_id", type=int)
+        try:
+            issue_book(member_id, book_id, current_user, current_app.config["DEFAULT_LOAN_DAYS"])
+            flash("Book issued successfully.", "success")
+        except ValueError as error:
+            flash(str(error), "danger")
+        except Exception:
+            current_app.logger.exception("Book issue failed")
+            flash("The issue could not be completed; no inventory was changed.", "danger")
+        return redirect(url_for("catalog.loans"))
+    rows = Loan.query.order_by(Loan.status, Loan.due_date).paginate(page=request.args.get("page", 1, type=int), per_page=20, error_out=False)
+    members = User.query.filter_by(role="member", active=True).order_by(User.full_name).all()
+    books = Book.query.order_by(Book.title).all()
+    ready_reservations = Reservation.query.filter_by(status="ready").order_by(Reservation.created_at).all()
+    return render_template("loans.html", pagination=rows, members=members, books=books,
+                           ready_reservations=ready_reservations, today=date.today())
+
+
+@bp.post("/loans/<int:loan_id>/return")
+@roles_required("admin")
+def loan_return(loan_id):
+    try:
+        return_book(loan_id, current_user, current_app.config["FINE_PER_DAY"])
+        flash("Return processed and inventory updated.", "success")
+    except ValueError as error:
+        flash(str(error), "danger")
+    except Exception:
+        current_app.logger.exception("Book return failed")
+        flash("The return could not be completed; please retry.", "danger")
+    return redirect(url_for("catalog.loans"))
+
+
+@bp.get("/history")
+@roles_required("admin", "member")
+def history():
+    query = Loan.query.order_by(Loan.issued_at.desc())
+    if current_user.role == "member":
+        query = query.filter_by(member_id=current_user.id)
+    rows = query.paginate(page=request.args.get("page", 1, type=int), per_page=20, error_out=False)
+    return render_template("history.html", pagination=rows)
+
+
+@bp.post("/reserve/<int:book_id>")
+@roles_required("member")
+def reserve(book_id):
+    book = db.get_or_404(Book, book_id)
+    existing = Reservation.query.filter(Reservation.book_id == book.id, Reservation.member_id == current_user.id,
+                                        Reservation.status.in_(["waiting", "ready"])).first()
+    if existing:
+        flash("You already have a waiting reservation for this title.", "info")
+    else:
+        copy = BookCopy.query.filter_by(book_id=book.id, status="available").order_by(BookCopy.id).first()
+        row = Reservation(book_id=book.id, member_id=current_user.id,
+                          status="ready" if copy else "waiting", available_at_request=bool(copy),
+                          fulfilled_at=utcnow() if copy else None)
+        db.session.add(row)
+        if copy:
+            copy.status = "reserved"
+            db.session.flush()
+            from .services import notify
+            notify(current_user.id, "Reserved book ready", f"A copy of {book.title} is ready for pickup.", "reservation")
+        audit(current_user, "reserve_book", "reservation", None, book.title)
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            flash("A reservation for this title was just recorded on your account.", "warning")
+            return redirect(url_for("catalog.my_reservations"))
+        flash("Reservation request recorded. A copy is ready now." if copy else "Reservation request recorded and added to the waiting list.", "success")
+    return redirect(url_for("catalog.books"))
+
+
+@bp.post("/reservations/<int:reservation_id>/checkout")
+@roles_required("admin")
+def reservation_checkout(reservation_id):
+    reservation = db.get_or_404(Reservation, reservation_id)
+    try:
+        issue_book(reservation.member_id, reservation.book_id, current_user,
+                   current_app.config["DEFAULT_LOAN_DAYS"], reservation_id=reservation.id)
+        flash("Ready reservation checked out to the member.", "success")
+    except ValueError as error:
+        flash(str(error), "danger")
+    except Exception:
+        current_app.logger.exception("Reservation checkout failed")
+        flash("Checkout could not be completed; the reservation and copy were left unchanged.", "danger")
+    return redirect(url_for("catalog.loans"))
+
+
+@bp.get("/reservations")
+@roles_required("admin")
+def reservations():
+    rows = Reservation.query.order_by(Reservation.status, Reservation.created_at).paginate(
+        page=request.args.get("page", 1, type=int), per_page=25, error_out=False)
+    return render_template("reservations.html", pagination=rows)
+
+
+@bp.get("/my-reservations")
+@roles_required("member")
+def my_reservations():
+    rows = Reservation.query.filter_by(member_id=current_user.id).order_by(Reservation.created_at.desc()).all()
+    return render_template("my_reservations.html", reservations=rows)
+
+
+@bp.post("/reservations/<int:reservation_id>/cancel")
+@login_required
+def reservation_cancel(reservation_id):
+    reservation = db.get_or_404(Reservation, reservation_id)
+    if current_user.role != "admin" and (current_user.role != "member" or reservation.member_id != current_user.id):
+        abort(403)
+    try:
+        cancel_reservation(reservation.id, current_user)
+        flash("Reservation cancelled.", "success")
+    except ValueError as error:
+        flash(str(error), "danger")
+    return redirect(url_for("catalog.reservations" if current_user.role == "admin" else "main.dashboard"))
+
+
+@bp.get("/fines")
+@roles_required("admin", "member")
+def fines():
+    from .models import Fine
+    query = Fine.query.join(Loan)
+    if current_user.role == "member":
+        query = query.filter(Loan.member_id == current_user.id)
+    rows = query.order_by(Fine.assessed_at.desc()).all()
+    return render_template("fines.html", fines=rows)
+
+
+@bp.post("/fines/<int:fine_id>/paid")
+@roles_required("admin")
+def fine_paid(fine_id):
+    from .models import Fine
+    fine = db.get_or_404(Fine, fine_id)
+    fine.paid = True
+    audit(current_user, "mark_fine_paid", "fine", fine.id, str(fine.amount))
+    db.session.commit()
+    flash("Fine marked as paid.", "success")
+    return redirect(url_for("catalog.fines"))
+
+
+@bp.get("/copies")
+@roles_required("admin")
+def copies():
+    rows = BookCopy.query.join(Book).order_by(Book.title, BookCopy.barcode).all()
+    return render_template("copies.html", copies=rows)
+
+
+@bp.post("/copies/<int:copy_id>/status")
+@roles_required("admin")
+def copy_status(copy_id):
+    copy = db.get_or_404(BookCopy, copy_id)
+    status = request.form.get("status")
+    if status not in {"available", "maintenance", "lost"} or copy.status in {"loaned", "reserved"}:
+        flash("Choose an allowed status. Loaned and reserved copies cannot be changed here.", "danger")
+    else:
+        copy.status = status
+        audit(current_user, "update_copy_status", "book_copy", copy.id, status)
+        db.session.commit()
+        flash("Copy status updated.", "success")
+    return redirect(url_for("catalog.copies"))
