@@ -105,7 +105,9 @@ class Loan(db.Model):
     fine = db.relationship("Fine", back_populates="loan", uselist=False, cascade="all, delete-orphan")
     __table_args__ = (
         CheckConstraint("status IN ('active', 'returned')", name="ck_loan_status"),
-        Index("uq_active_copy_loan", "copy_id", unique=True, sqlite_where=db.text("status = 'active'")),
+        Index("uq_active_copy_loan", "copy_id", unique=True,
+              sqlite_where=db.text("status = 'active'"),
+              postgresql_where=db.text("status = 'active'")),
     )
 
 
@@ -122,7 +124,9 @@ class Reservation(db.Model):
     member = db.relationship(User)
     __table_args__ = (
         CheckConstraint("status IN ('waiting', 'ready', 'fulfilled', 'cancelled')", name="ck_reservation_status"),
-        Index("uq_waiting_reservation", "book_id", "member_id", unique=True, sqlite_where=db.text("status IN ('waiting','ready')")),
+        Index("uq_waiting_reservation", "book_id", "member_id", unique=True,
+              sqlite_where=db.text("status IN ('waiting','ready')"),
+              postgresql_where=db.text("status IN ('waiting','ready')")),
     )
 
 

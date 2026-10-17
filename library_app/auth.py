@@ -2,10 +2,10 @@ import re
 from urllib.parse import urlsplit
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
-from flask_login import current_user, login_user, logout_user
+from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy.exc import IntegrityError
 
-from .extensions import db
+from .extensions import db, limiter
 from .models import User
 
 bp = Blueprint("auth", __name__)
@@ -16,6 +16,7 @@ def valid_email(value):
 
 
 @bp.route("/register", methods=["GET", "POST"])
+@limiter.limit("5 per hour", methods=["POST"])
 def register():
     if current_user.is_authenticated:
         return redirect(url_for("main.dashboard"))
@@ -47,6 +48,7 @@ def register():
 
 
 @bp.route("/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"])
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("main.dashboard"))
@@ -68,6 +70,55 @@ def login():
             return redirect(url_for("main.dashboard"))
         flash("Email or password was not recognized.", "danger")
     return render_template("auth/login.html")
+
+
+@bp.route("/account", methods=["GET", "POST"])
+@login_required
+def account():
+    if request.method == "POST":
+        action = request.form.get("form_action")
+        if action == "profile":
+            name = request.form.get("full_name", "").strip()
+            email = request.form.get("email", "").strip().lower()
+            if len(name) < 2 or len(name) > 120:
+                flash("Enter your name using 2–120 characters.", "danger")
+            elif not valid_email(email) or len(email) > 255:
+                flash("Enter a valid email address.", "danger")
+            elif User.query.filter(User.email == email, User.id != current_user.id).first():
+                flash("That email address is already in use.", "danger")
+            else:
+                current_user.full_name = name
+                current_user.email = email
+                from .services import audit
+                audit(current_user, "update_account", "user", current_user.id)
+                try:
+                    db.session.commit()
+                    flash("Your profile has been updated.", "success")
+                except IntegrityError:
+                    db.session.rollback()
+                    flash("That email address is already in use.", "danger")
+        elif action == "password":
+            current_password = request.form.get("current_password", "")
+            new_password = request.form.get("new_password", "")
+            confirm_password = request.form.get("confirm_password", "")
+            if not current_user.check_password(current_password):
+                flash("Your current password is not correct.", "danger")
+            elif not 10 <= len(new_password) <= 256:
+                flash("Choose a password between 10 and 256 characters.", "danger")
+            elif new_password != confirm_password:
+                flash("The new password and confirmation do not match.", "danger")
+            elif current_user.check_password(new_password):
+                flash("Choose a new password that differs from your current one.", "warning")
+            else:
+                current_user.set_password(new_password)
+                from .services import audit
+                audit(current_user, "change_password", "user", current_user.id)
+                db.session.commit()
+                flash("Your password has been changed.", "success")
+        else:
+            flash("Choose a valid account action.", "danger")
+        return redirect(url_for("auth.account"))
+    return render_template("account.html")
 
 
 @bp.post("/logout")

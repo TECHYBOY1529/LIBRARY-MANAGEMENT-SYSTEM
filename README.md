@@ -14,18 +14,21 @@ A modular library management web application for a college or university academi
 - **Quality analytics:** database-backed KPIs, borrowing and satisfaction charts, problem-category counts, and PDCA status/outcomes. A KPI shows **Insufficient data** when it has no usable sample.
 - **Reports:** inventory, borrowing/returns, overdue loans, fines, and member-activity CSV exports.
 - **Security and quality controls:** Werkzeug password hashing, session security, CSRF protection, server-side validation, foreign-key enforcement, audit log, transaction rollback, and pytest coverage.
+- **Production foundations:** fail-closed production secret checks, secure session cookies, request throttling for login/registration, response security headers, `/healthz`, SQLAlchemy migrations, PostgreSQL support, and Gunicorn deployment.
+- **Account settings:** members and staff can update their profile and change passwords after verifying the current password.
 
 See [TQM implementation and KPI formulas](docs/TQM_IMPLEMENTATION.md), [database schema](docs/DATABASE_SCHEMA.md), and [system architecture](docs/ARCHITECTURE.md).
 
 ## Technology stack
 
 - Frontend: HTML5, CSS3, JavaScript, Bootstrap 5, Chart.js
-- Backend: Python 3.10+, Flask, Flask-Login, Flask-WTF
-- Database: SQLite, Flask-SQLAlchemy / SQLAlchemy
+- Backend: Python 3.10+, Flask, Flask-Login, Flask-WTF, Flask-Limiter
+- Database: SQLite for local/demo use; PostgreSQL supported for hosted use through Flask-SQLAlchemy / SQLAlchemy
 - Password hashing: Werkzeug secure password hash utilities
+- Deployment and migrations: Gunicorn, Flask-Migrate / Alembic
 - Tests: pytest
 
-Bootstrap, Chart.js, and the font stylesheet load from CDNs in a browser; an internet connection is needed for those visual assets. The Flask server and SQLite database run locally.
+Bootstrap and Chart.js load from CDNs in a browser; an internet connection is needed for those visual assets. The interface uses system fonts.
 
 ## Installation and setup (Windows PowerShell)
 
@@ -43,7 +46,7 @@ Open `.env` and replace `SECRET_KEY` with a long random value before using the a
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-The `.env` file and local database are excluded by `.gitignore`. Do not commit secrets or real member data.
+The `.env` file and local database are excluded by `.gitignore`. Do not commit secrets or real member data. The development defaults are not production settings.
 
 ## Database setup and demo accounts
 
@@ -81,7 +84,15 @@ Change a demo password using the hidden terminal prompt:
 python -m flask --app run.py set-password admin@library.demo
 ```
 
-The seed password is **only a local development convenience**; replace it before demonstrating on a shared machine. To remove the seeded users and demo rows, back up any data you want to keep, then remove the local database file `library.db` in the project root and run `init-db` without `seed-demo`. You can also disable ordinary member accounts in **Members**. Never point the destructive reset command at a database containing real records.
+The seed password is **only a local development convenience**; replace it before demonstrating on a shared machine. To remove the seeded users and demo rows, back up any data you want to keep, then remove `instance/library.db` and run `init-db` without `seed-demo`. You can also disable ordinary member accounts in **Members**. Never point the destructive reset command at a database containing real records.
+
+For hosted deployments, create the schema from committed migrations with `python -m flask --app run.py db upgrade`, then create the first staff account interactively:
+
+```powershell
+python -m flask --app run.py create-user --email librarian@example.edu --name "Library Administrator" --role admin
+```
+
+The command prompts for a password without putting it in shell history. Use `--role quality_manager` to provision a quality manager. Production mode blocks demo seeding and destructive demo resets.
 
 ## Run locally
 
@@ -90,6 +101,33 @@ python run.py
 ```
 
 Open [http://127.0.0.1:5000](http://127.0.0.1:5000). Registering through the public form always creates a Member/Student account; staff accounts are local demo seeds or accounts provisioned by an administrator.
+
+## Railway deployment
+
+Connect the GitHub repository and deploy its `main` branch. The project root is the repository root; there is no separate backend directory. Configure:
+
+```text
+Build command: pip install -r requirements.txt
+Start command: gunicorn run:app --bind 0.0.0.0:$PORT
+```
+
+Set these service variables in Railway (use Railway's PostgreSQL service for hosted data):
+
+```text
+APP_ENV=production
+FLASK_DEBUG=false
+SECRET_KEY=<a new random value of at least 32 characters>
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+SESSION_COOKIE_SECURE=true
+TRUST_PROXY=true
+RATELIMIT_STORAGE_URI=${{Redis.REDIS_URL}}
+DEFAULT_LOAN_DAYS=14
+FINE_PER_DAY=1.00
+```
+
+Adjust the Railway reference names to match your PostgreSQL and Redis service names and available connection variables. Railway supplies `PORT`; do not define it yourself. `TRUST_PROXY=true` is intended for a trusted Railway proxy. Redis gives rate limits shared storage across app restarts and instances; `memory://` is suitable only for a local/single-process demo.
+
+After attaching the PostgreSQL URL, run `python -m flask --app run.py db upgrade` against the deployed service before opening the public domain. Then run the `create-user` command from the service shell to create the initial staff login. Do not run `seed-demo` or `reset-demo` in production. If using SQLite instead, mount a persistent Railway volume at `/app/instance`, keep `DATABASE_URL=sqlite:///library.db`, use one application instance, and configure backups. SQLite is intended here for local and small demonstration deployments.
 
 To refresh one due-soon/overdue in-app notification per active loan, run this command daily (or when demonstrating overdue reminders):
 
@@ -127,6 +165,7 @@ library-management-system/
 │   ├── static/              # responsive CSS and JavaScript
 │   └── templates/           # accessible Bootstrap/Jinja role-based views
 ├── docs/                    # database, TQM, architecture, report outline, demo guide
+├── migrations/              # repeatable schema changes for deployed databases
 ├── scripts/                 # direct init, seed, reset entry points
 ├── tests/                   # pytest unit, integration, and workflow coverage
 ├── .env.example
@@ -145,4 +184,4 @@ library-management-system/
 
 ## Limitations and academic use
 
-This is a local academic prototype, not a production multi-branch deployment. Notifications are in-app (no email/SMS provider); no payment gateway or barcode hardware integration is included. The issue-time KPI measures the server-side issue operation, not a physical queue or total desk interaction. The dashboard withholds control limits because it does not have the consistent rational subgroups needed to calculate statistically valid limits. Replace the fictional seed data with institution-approved, privacy-reviewed records before any real-world evaluation.
+This project now includes production deployment foundations, but it is not a fully managed library service. Email verification, password-reset email, external email/SMS notifications, payment processing, and barcode hardware integrations still require institution-approved providers and operational setup. SQLite is single-instance storage; use PostgreSQL for hosted multi-worker deployments. The issue-time KPI measures the server-side issue operation, not a physical queue or total desk interaction. The dashboard withholds control limits because it does not have the consistent rational subgroups needed to calculate statistically valid limits. Replace fictional seed data with institution-approved, privacy-reviewed records before any real-world evaluation.

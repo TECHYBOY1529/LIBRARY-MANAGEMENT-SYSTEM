@@ -29,6 +29,53 @@ def test_member_cannot_change_complaint_status(client, records, app):
     assert client.post(f"/quality/complaints/{complaint_id}/status", data={"status": "resolved"}).status_code == 403
 
 
+def test_staff_registers_search_filters_and_paginate(client, records, app):
+    now = datetime.now(timezone.utc)
+    with app.app_context():
+        complaints = [
+            Complaint(member_id=records["member_id"], category="waiting_time", subject=f"Queue report {n}",
+                      description="Peak hour queue", status="open", created_at=now - timedelta(minutes=n))
+            for n in range(22)
+        ]
+        complaints.extend([
+            Complaint(member_id=records["member_id"], category="book_availability", subject="Needle report",
+                      description="Specific search target", status="open"),
+            Complaint(member_id=records["member_id"], category="waiting_time", subject="Closed report",
+                      description="Do not include", status="closed"),
+        ])
+        actions = [
+            ImprovementAction(problem=f"Queue issue {n}", root_cause="Peak demand", corrective_action="Add desk",
+                              owner_id=records["manager_id"], deadline=date.today() + timedelta(days=n), status="pending")
+            for n in range(22)
+        ]
+        actions.append(ImprovementAction(problem="Needle action", root_cause="Unique cause",
+                                         corrective_action="Specific search target", owner_id=records["manager_id"],
+                                         deadline=date.today(), status="in_progress"))
+        db.session.add_all([*complaints, *actions])
+        db.session.commit()
+
+    login(client, "quality@test.edu", "QualityPassword!2026")
+    response = client.get("/quality/complaints?category=waiting_time&status=open")
+    assert response.status_code == 200
+    assert b"22 complaints" in response.data
+    assert b"1 / 2" in response.data
+    page_two = client.get("/quality/complaints?category=waiting_time&status=open&page=2")
+    assert b"2 / 2" in page_two.data
+    filtered = client.get("/quality/complaints?q=Needle&category=book_availability&status=open")
+    assert b"Needle report" in filtered.data
+    assert b"Closed report" not in filtered.data
+
+    response = client.get("/quality/actions?status=pending")
+    assert response.status_code == 200
+    assert b"22 actions" in response.data
+    assert b"1 / 2" in response.data
+    page_two = client.get("/quality/actions?status=pending&page=2")
+    assert b"2 / 2" in page_two.data
+    filtered = client.get("/quality/actions?q=Needle&status=in_progress")
+    assert b"Needle action" in filtered.data
+    assert b"Queue issue" not in filtered.data
+
+
 def test_action_and_pdca_workflow(client, records, app):
     login(client, "quality@test.edu", "QualityPassword!2026")
     response = client.post("/quality/actions", data={"problem": "Slow queue", "root_cause": "Only one desk", "corrective_action": "Open second desk", "owner_id": records["manager_id"], "deadline": (date.today()+timedelta(days=5)).isoformat()}, follow_redirects=True)

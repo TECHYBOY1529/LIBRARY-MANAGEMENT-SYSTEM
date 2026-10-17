@@ -29,6 +29,50 @@ def test_login_and_logout(client, records):
     assert b"Sign in to your library" in response.data
 
 
+def test_account_profile_and_password_update(client, records, app):
+    login(client, "member@test.edu", "MemberPassword!2026")
+    response = client.get("/account")
+    assert response.status_code == 200
+    assert b"Change password" in response.data
+
+    response = client.post("/account", data={
+        "form_action": "profile",
+        "full_name": "Updated Member",
+        "email": "updated.member@test.edu",
+    }, follow_redirects=True)
+    assert b"Your profile has been updated" in response.data
+    with app.app_context():
+        member = db.session.get(User, records["member_id"])
+        assert member.full_name == "Updated Member"
+        assert member.email == "updated.member@test.edu"
+
+    response = client.post("/account", data={
+        "form_action": "password",
+        "current_password": "MemberPassword!2026",
+        "new_password": "UpdatedPassword!2026",
+        "confirm_password": "UpdatedPassword!2026",
+    }, follow_redirects=True)
+    assert b"Your password has been changed" in response.data
+    with app.app_context():
+        member = db.session.get(User, records["member_id"])
+        assert member.check_password("UpdatedPassword!2026")
+
+
+def test_login_is_rate_limited(client):
+    response = None
+    for _ in range(11):
+        response = client.post("/login", data={"email": "unknown@test.edu", "password": "wrong"})
+    assert response.status_code == 429
+
+
+def test_health_endpoint_has_security_headers(client):
+    response = client.get("/healthz")
+    assert response.status_code == 200
+    assert response.json == {"status": "ok"}
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+
+
 def test_role_access_control(client, records):
     login(client, "member@test.edu", "MemberPassword!2026")
     assert client.get("/library/books/new").status_code == 403

@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}My account · Campus Library{% endblock %}
+{% block page_context %}My account{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <div class="eyebrow">ACCOUNT SETTINGS</div>
+    <h1>My account</h1>
+    <p>Manage your contact details and keep your sign-in secure.</p>
+  </div>
+  <span class="role-chip">{{ current_user.role.replace('_', ' ')|title }}</span>
+</div>
+<div class="account-grid">
+  <section class="panel form-panel">
+    <div class="panel-heading"><div><h3>Profile information</h3><p>Used for library records and service updates.</p></div></div>
+    <form method="post" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="form_action" value="profile">
+      <label>Full name<input class="form-control" name="full_name" value="{{ current_user.full_name }}" maxlength="120" autocomplete="name" required></label>
+      <label>Email address<input class="form-control" type="email" name="email" value="{{ current_user.email }}" maxlength="255" autocomplete="email" required></label>
+      <button class="btn btn-primary" type="submit">Save profile</button>
+    </form>
+  </section>
+  <section class="panel form-panel">
+    <div class="panel-heading"><div><h3>Change password</h3><p>Use at least 10 characters. Your current password is required.</p></div></div>
+    <form method="post" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="form_action" value="password">
+      <label>Current password<input class="form-control" type="password" name="current_password" autocomplete="current-password" required></label>
+      <label>New password<input class="form-control" type="password" name="new_password" minlength="10" maxlength="256" autocomplete="new-password" required></label>
+      <label>Confirm new password<input class="form-control" type="password" name="confirm_password" minlength="10" maxlength="256" autocomplete="new-password" required></label>
+      <button class="btn btn-primary" type="submit">Update password</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

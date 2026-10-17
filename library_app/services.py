@@ -36,8 +36,9 @@ def issue_book(member_id, book_id, staff_user, loan_days=14, reservation_id=None
             raise ValueError("This member already has an active loan for that title.")
         reservation = None
         if reservation_id:
-            reservation = Reservation.query.filter_by(id=reservation_id, member_id=member_id,
-                                                       book_id=book_id, status="ready").with_for_update().first()
+            reservation = (Reservation.query.filter_by(id=reservation_id, member_id=member_id,
+                                                        book_id=book_id, status="ready")
+                           .with_for_update().populate_existing().first())
             if not reservation:
                 raise ValueError("That reservation is not ready for this member.")
             copy = BookCopy.query.filter_by(book_id=book_id, status="reserved").with_for_update().first()
@@ -72,7 +73,8 @@ def return_book(loan_id, staff_user, fine_per_day=Decimal("1.00")):
             raise ValueError("Daily fine rate must be a valid amount.") from error
         if not fine_per_day.is_finite() or fine_per_day < 0:
             raise ValueError("Daily fine rate cannot be negative.")
-        loan = db.session.query(Loan).filter_by(id=loan_id).with_for_update().first()
+        loan = (db.session.query(Loan).filter_by(id=loan_id)
+                .with_for_update().populate_existing().first())
         if not loan or loan.status != "active":
             raise ValueError("That loan is not active and cannot be returned again.")
         loan.returned_at = utcnow()

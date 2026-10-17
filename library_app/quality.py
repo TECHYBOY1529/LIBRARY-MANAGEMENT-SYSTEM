@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from .extensions import db
 from .models import (Complaint, Feedback, ImprovementAction, InventoryAudit, Loan,
@@ -66,15 +66,31 @@ def complaint_new():
 @bp.get("/complaints/mine")
 @roles_required("member")
 def my_complaints():
-    rows = Complaint.query.filter_by(member_id=current_user.id).order_by(Complaint.created_at.desc()).all()
-    return render_template("complaints.html", complaints=rows, categories=CATEGORIES, staff_view=False)
+    rows = Complaint.query.filter_by(member_id=current_user.id).order_by(Complaint.created_at.desc()).paginate(
+        page=request.args.get("page", 1, type=int), per_page=20, error_out=False)
+    return render_template("complaints.html", pagination=rows, categories=CATEGORIES, staff_view=False)
 
 
 @bp.get("/complaints")
 @roles_required("admin", "quality_manager")
 def complaints():
-    rows = Complaint.query.order_by(Complaint.created_at.desc()).all()
-    return render_template("complaints.html", complaints=rows, categories=CATEGORIES, staff_view=True)
+    query = Complaint.query
+    search = request.args.get("q", "").strip()[:120]
+    status = request.args.get("status", "")
+    category = request.args.get("category", "")
+    if search:
+        pattern = f"%{search}%"
+        query = query.outerjoin(User, Complaint.member_id == User.id).filter(
+            or_(Complaint.subject.ilike(pattern), Complaint.description.ilike(pattern), User.full_name.ilike(pattern))
+        )
+    if status in {"open", "in_progress", "resolved", "closed"}:
+        query = query.filter(Complaint.status == status)
+    if category in CATEGORIES:
+        query = query.filter(Complaint.category == category)
+    rows = query.order_by(Complaint.created_at.desc()).paginate(
+        page=request.args.get("page", 1, type=int), per_page=20, error_out=False)
+    return render_template("complaints.html", pagination=rows, categories=CATEGORIES, staff_view=True,
+                           search=search, selected_status=status, selected_category=category)
 
 
 @bp.post("/complaints/<int:complaint_id>/status")
@@ -154,9 +170,22 @@ def actions():
             db.session.commit()
             flash("Improvement action assigned.", "success")
             return redirect(url_for("quality.actions"))
-    rows = ImprovementAction.query.order_by(ImprovementAction.deadline, ImprovementAction.id).all()
+    query = ImprovementAction.query
+    search = request.args.get("q", "").strip()[:120]
+    status_filter = request.args.get("status", "")
+    if search:
+        pattern = f"%{search}%"
+        query = query.outerjoin(User, ImprovementAction.owner_id == User.id).filter(
+            or_(ImprovementAction.problem.ilike(pattern), ImprovementAction.corrective_action.ilike(pattern), User.full_name.ilike(pattern))
+        )
+    if status_filter in {"pending", "in_progress", "completed"}:
+        query = query.filter(ImprovementAction.status == status_filter)
+    rows = query.order_by(ImprovementAction.deadline, ImprovementAction.id).paginate(
+        page=request.args.get("page", 1, type=int), per_page=20, error_out=False)
+    status_counts = dict(db.session.query(ImprovementAction.status, func.count(ImprovementAction.id)).group_by(ImprovementAction.status).all())
     owners = User.query.filter(User.role.in_(["admin", "quality_manager"]), User.active.is_(True)).order_by(User.full_name).all()
-    return render_template("actions.html", actions=rows, owners=owners)
+    return render_template("actions.html", pagination=rows, actions=rows.items, owners=owners,
+                           status_counts=status_counts, search=search, selected_status=status_filter)
 
 
 @bp.post("/actions/<int:action_id>/status")
