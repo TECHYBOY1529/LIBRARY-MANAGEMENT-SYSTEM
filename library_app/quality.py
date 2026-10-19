@@ -233,8 +233,9 @@ def pdca():
             db.session.commit()
             flash("PDCA cycle started in Plan.", "success")
             return redirect(url_for("quality.pdca"))
-    cycles = PdcaCycle.query.order_by(PdcaCycle.started_at.desc()).all()
-    return render_template("pdca.html", cycles=cycles)
+    cycles = PdcaCycle.query.order_by(PdcaCycle.started_at.desc()).paginate(
+        page=request.args.get("page", 1, type=int), per_page=20, error_out=False)
+    return render_template("pdca.html", pagination=cycles, cycles=cycles.items)
 
 
 @bp.post("/pdca/<int:cycle_id>/advance")
