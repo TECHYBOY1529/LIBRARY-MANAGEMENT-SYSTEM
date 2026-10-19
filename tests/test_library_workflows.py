@@ -11,16 +11,17 @@ from .conftest import login
 
 def test_admin_can_create_and_edit_book(client, records, app):
     login(client, "admin@test.edu", "AdminPassword!2026")
-    payload = {"isbn": "9781111111111", "title": "Created Book", "publication_year": "2022",
+    payload = {"isbn": "9781111111113", "title": "Created Book", "publication_year": "2022",
                "author_id": records["author_id"], "category_id": records["category_id"],
-               "publisher_id": records["publisher_id"], "copies": "2"}
+               "publisher_id": records["publisher_id"], "course_id": records["course_id"],
+               "semester": "3", "copies": "2"}
     response = client.post("/library/books/new", data=payload, follow_redirects=True)
     assert b"Book and copies added" in response.data
     with app.app_context():
-        book = Book.query.filter_by(isbn="9781111111111").one()
+        book = Book.query.filter_by(isbn="9781111111113").one()
         assert book.total_copies == 2
         book_id = book.id
-    payload.update({"isbn": "9781111111111", "title": "Edited Book", "add_copies": "1"})
+    payload.update({"isbn": "9781111111113", "title": "Edited Book", "add_copies": "1"})
     response = client.post(f"/library/books/{book_id}/edit", data=payload, follow_redirects=True)
     assert b"Book details saved" in response.data
     with app.app_context():
@@ -33,7 +34,8 @@ def test_book_form_rejects_invalid_isbn(client, records, app):
     login(client, "admin@test.edu", "AdminPassword!2026")
     response = client.post("/library/books/new", data={"isbn": "bad", "title": "Invalid", "publication_year": "2024",
                                                         "author_id": records["author_id"], "category_id": records["category_id"],
-                                                        "publisher_id": records["publisher_id"], "copies": "1"})
+                                                        "publisher_id": records["publisher_id"], "course_id": records["course_id"],
+                                                        "semester": "1", "copies": "1"})
     assert response.status_code == 200
     assert b"valid ISBN" in response.data
     with app.app_context():

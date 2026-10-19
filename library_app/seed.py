@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from .extensions import db
-from .models import (Author, Book, BookCopy, Category, Complaint, Feedback, Fine,
+from .models import (Author, Book, BookCopy, Category, Course, Complaint, Feedback, Fine,
                      ImprovementAction, InventoryAudit, Loan, Notification, PdcaCycle, Publisher,
                      Reservation, RootCauseAnalysis, User, utcnow)
 
@@ -33,9 +33,12 @@ def seed_demo():
         members.append(user)
     db.session.add_all(members)
     categories = [Category(name=n) for n in ["Computer Science", "Literature", "Mathematics", "History", "Science", "Business"]]
+    courses = [Course(name=n) for n in ["B.Tech Computer Science", "BA English", "B.Sc Mathematics",
+                                         "BA History", "B.Sc Natural Sciences", "BBA Business Administration",
+                                         "General Studies"]]
     authors = [Author(name=n) for n in ["Mira Sen", "Arun Das", "Leah Carter", "Samir Rao", "Nora Patel", "Ishaan Mehta", "Ella Green", "Dev Malik", "Ruth James", "Noah Kim"]]
     publishers = [Publisher(name=n) for n in ["Campus Press", "Northstar Academic", "Riverbend Books", "Open Shelf Publishing"]]
-    db.session.add_all(categories + authors + publishers)
+    db.session.add_all(categories + courses + authors + publishers)
     db.session.flush()
 
     titles = [
@@ -50,6 +53,7 @@ def seed_demo():
     for i, title in enumerate(titles):
         book = Book(isbn=f"978000{i + 1:07d}", title=title, author_id=authors[i % len(authors)].id,
                     category_id=categories[i // 5].id, publisher_id=publishers[i % len(publishers)].id,
+                    course_id=courses[i // 5].id, semester=(i % 8) + 1,
                     publication_year=2016 + i % 10)
         db.session.add(book)
         books.append(book)

@@ -2,7 +2,7 @@ import pytest
 
 from library_app import create_app
 from library_app.extensions import db
-from library_app.models import Author, Book, BookCopy, Category, Publisher, User
+from library_app.models import Author, Book, BookCopy, Category, Course, Publisher, User
 
 
 @pytest.fixture
@@ -39,10 +39,12 @@ def records(app):
         other = User(full_name="Other Member", email="other@test.edu", role="member")
         other.set_password("OtherPassword!2026")
         author, category, publisher = Author(name="Test Author"), Category(name="Test Category"), Publisher(name="Test Publisher")
-        db.session.add_all([admin, manager, member, other, author, category, publisher])
+        course = Course(name="Test BSc Course")
+        db.session.add_all([admin, manager, member, other, author, category, publisher, course])
         db.session.flush()
         book = Book(isbn="9781234567890", title="Test Book", author_id=author.id,
-                    category_id=category.id, publisher_id=publisher.id, publication_year=2024)
+                    category_id=category.id, publisher_id=publisher.id, course_id=course.id,
+                    semester=2, publication_year=2024)
         db.session.add(book)
         db.session.flush()
         copy = BookCopy(book_id=book.id, barcode="TEST-001")
@@ -50,7 +52,8 @@ def records(app):
         db.session.commit()
         return {"admin_id": admin.id, "manager_id": manager.id, "member_id": member.id,
                 "other_id": other.id, "book_id": book.id, "copy_id": copy.id,
-                "author_id": author.id, "category_id": category.id, "publisher_id": publisher.id}
+                "author_id": author.id, "category_id": category.id, "publisher_id": publisher.id,
+                "course_id": course.id}
 
 
 def login(client, email, password):

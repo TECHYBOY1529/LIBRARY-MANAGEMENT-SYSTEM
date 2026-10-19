@@ -47,6 +47,12 @@ class Category(db.Model):
     name = db.Column(db.String(100), unique=True, nullable=False)
 
 
+class Course(db.Model):
+    __tablename__ = "courses"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(160), unique=True, nullable=False)
+
+
 class Publisher(db.Model):
     __tablename__ = "publishers"
     id = db.Column(db.Integer, primary_key=True)
@@ -61,11 +67,14 @@ class Book(db.Model):
     author_id = db.Column(db.Integer, db.ForeignKey("authors.id", ondelete="RESTRICT"), nullable=False, index=True)
     category_id = db.Column(db.Integer, db.ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False, index=True)
     publisher_id = db.Column(db.Integer, db.ForeignKey("publishers.id", ondelete="RESTRICT"), nullable=False)
+    course_id = db.Column(db.Integer, db.ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True)
+    semester = db.Column(db.Integer, nullable=True)
     publication_year = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     author = db.relationship(Author)
     category = db.relationship(Category)
     publisher = db.relationship(Publisher)
+    course = db.relationship(Course)
     copies = db.relationship("BookCopy", back_populates="book", cascade="all, delete-orphan")
     @property
     def total_copies(self):
@@ -73,6 +82,8 @@ class Book(db.Model):
     @property
     def available_copies(self):
         return sum(copy.status == "available" for copy in self.copies)
+    __table_args__ = (Index("ix_book_category_title", "category_id", "title"),
+                      CheckConstraint("semester IS NULL OR semester BETWEEN 1 AND 12", name="ck_book_semester_range"))
 
 
 class BookCopy(db.Model):
@@ -83,7 +94,8 @@ class BookCopy(db.Model):
     status = db.Column(db.String(20), nullable=False, default="available", index=True)
     acquired_at = db.Column(db.Date, nullable=False, default=date.today)
     book = db.relationship(Book, back_populates="copies")
-    __table_args__ = (CheckConstraint("status IN ('available', 'loaned', 'reserved', 'maintenance', 'lost')", name="ck_copy_status"),)
+    __table_args__ = (CheckConstraint("status IN ('available', 'loaned', 'reserved', 'maintenance', 'lost')", name="ck_copy_status"),
+                      Index("ix_bookcopy_book_status", "book_id", "status"))
 
 
 class Loan(db.Model):
@@ -105,6 +117,8 @@ class Loan(db.Model):
     fine = db.relationship("Fine", back_populates="loan", uselist=False, cascade="all, delete-orphan")
     __table_args__ = (
         CheckConstraint("status IN ('active', 'returned')", name="ck_loan_status"),
+        Index("ix_loan_status_due_date", "status", "due_date"),
+        Index("ix_loan_issued_at", "issued_at"),
         Index("uq_active_copy_loan", "copy_id", unique=True,
               sqlite_where=db.text("status = 'active'"),
               postgresql_where=db.text("status = 'active'")),
@@ -267,3 +281,54 @@ class InventoryAudit(db.Model):
         CheckConstraint("checked_copies > 0", name="ck_audit_checked_positive"),
         CheckConstraint("matching_copies >= 0 AND matching_copies <= checked_copies", name="ck_audit_matches_range"),
     )
+
+
+class SystemSetting(db.Model):
+    __tablename__ = "system_settings"
+    key = db.Column(db.String(80), primary_key=True)
+    value = db.Column(db.String(500), nullable=False)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    updated_by = db.relationship(User)
+
+
+class BugIncident(db.Model):
+    __tablename__ = "bug_incidents"
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(180), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    severity = db.Column(db.String(12), nullable=False, default="medium", index=True)
+    status = db.Column(db.String(16), nullable=False, default="open", index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    resolved_at = db.Column(db.DateTime)
+    created_by = db.relationship(User)
+    __table_args__ = (
+        CheckConstraint("severity IN ('low','medium','high')", name="ck_bug_incident_severity"),
+        CheckConstraint("status IN ('open','in_progress','resolved')", name="ck_bug_incident_status"),
+    )
+
+
+class PasswordResetToken(db.Model):
+    __tablename__ = "password_reset_tokens"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    used_at = db.Column(db.DateTime)
+    user = db.relationship(User)
+
+
+class CatalogImportBatch(db.Model):
+    __tablename__ = "catalog_import_batches"
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename = db.Column(db.String(255), nullable=False)
+    rows_json = db.Column(db.Text, nullable=False)
+    row_errors_json = db.Column(db.Text, nullable=False, default="[]")
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    imported_at = db.Column(db.DateTime)
+    owner = db.relationship(User)
