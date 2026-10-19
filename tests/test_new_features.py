@@ -6,7 +6,9 @@ from datetime import date, timedelta
 from sqlalchemy import event
 
 from library_app.extensions import db
-from library_app.models import AuditLog, Book, BugIncident, Complaint, Loan, PasswordResetToken, SystemSetting, User
+from library_app.models import AuditLog, Book, BookCopy, BugIncident, Complaint, Loan, Notification, PasswordResetToken, SystemSetting, User
+from library_app.services import refresh_loan_notifications
+from library_app.time_utils import library_today
 
 from .conftest import login
 
@@ -211,6 +213,42 @@ def test_member_activity_export_uses_bounded_queries_for_many_members(client, re
     rows = list(csv.reader(io.StringIO(response.data.decode("utf-8-sig"))))
     member_row = next(row for row in rows if row[0] == str(records["member_id"]))
     assert member_row[4:] == ["1", "1"]
+
+
+def test_due_loan_notifications_use_bounded_queries_and_are_idempotent(app, records):
+    with app.app_context():
+        today = library_today()
+        copies = [BookCopy(book_id=records["book_id"], barcode=f"REMINDER-{number}", status="loaned")
+                  for number in range(5)]
+        db.session.add_all(copies)
+        db.session.flush()
+        db.session.add_all([
+            Loan(copy_id=copy.id, member_id=records["member_id"], issued_by_id=records["admin_id"],
+                 due_date=today + timedelta(days=1))
+            for copy in copies
+        ])
+        db.session.commit()
+        engine = db.engine
+
+    statements = []
+
+    def record_statement(_connection, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record_statement)
+    try:
+        with app.app_context():
+            refresh_loan_notifications(records["member_id"])
+            refresh_loan_notifications(records["member_id"])
+    finally:
+        event.remove(engine, "before_cursor_execute", record_statement)
+
+    selects = [statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]
+    assert len(selects) <= 4
+    with app.app_context():
+        reminders = Notification.query.filter_by(user_id=records["member_id"], kind="due").all()
+        assert len(reminders) == 5
+        assert len({reminder.reference_key for reminder in reminders}) == 5
 
 
 def test_admin_pages_and_upload_permissions(client, records):

@@ -4,6 +4,7 @@ from time import perf_counter
 
 from flask import current_app
 from sqlalchemy import Date, case, cast, func
+from sqlalchemy.orm import joinedload
 
 from .extensions import db
 from .models import (AuditLog, BookCopy, Complaint, Feedback, Fine, ImprovementAction,
@@ -118,15 +119,31 @@ def return_book(loan_id, staff_user, fine_per_day=Decimal("1.00")):
 
 def refresh_loan_notifications(member_id=None):
     """Create one due-soon/overdue reminder per active loan; safe to call repeatedly."""
-    query = Loan.query.filter_by(status="active")
+    today = library_today()
+    query = (Loan.query.filter(Loan.status == "active", Loan.due_date <= today + timedelta(days=3))
+             .options(joinedload(Loan.copy).joinedload(BookCopy.book)))
     if member_id is not None:
         query = query.filter_by(member_id=member_id)
-    today = library_today()
+    reminders = []
     for loan in query.all():
         if loan.due_date < today:
-            notify(loan.member_id, "Book overdue", f"{loan.copy.book.title} was due {loan.due_date.isoformat()}. Please return it or contact the library.", "overdue", f"loan:{loan.id}:overdue")
+            reminders.append((loan.member_id, "Book overdue",
+                              f"{loan.copy.book.title} was due {loan.due_date.isoformat()}. Please return it or contact the library.",
+                              "overdue", f"loan:{loan.id}:overdue"))
         elif loan.due_date <= today + timedelta(days=3):
-            notify(loan.member_id, "Book due soon", f"{loan.copy.book.title} is due {loan.due_date.isoformat()}.", "due", f"loan:{loan.id}:due")
+            reminders.append((loan.member_id, "Book due soon",
+                              f"{loan.copy.book.title} is due {loan.due_date.isoformat()}.",
+                              "due", f"loan:{loan.id}:due"))
+    reference_keys = [reminder[4] for reminder in reminders]
+    existing_keys = set()
+    for offset in range(0, len(reference_keys), 500):
+        key_batch = reference_keys[offset:offset + 500]
+        existing_keys.update(row[0] for row in db.session.query(Notification.reference_key)
+                             .filter(Notification.reference_key.in_(key_batch)).all())
+    for user_id, title, message, kind, reference_key in reminders:
+        if reference_key not in existing_keys:
+            db.session.add(Notification(user_id=user_id, title=title, message=message, kind=kind,
+                                        reference_key=reference_key))
     db.session.commit()
 
 
