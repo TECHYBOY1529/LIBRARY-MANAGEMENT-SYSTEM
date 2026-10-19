@@ -752,7 +752,39 @@ h1 { font-weight:600; }
 :root[data-theme="dark"] .auth-card h1 { color:#edf2e8; }
 :root[data-theme="dark"] .auth-card label { color:#cfdbce; }
 :root[data-theme="dark"] .auth-demo-note { border-color:#3b493d; }
+:root[data-theme="dark"] .login-role-card { color:#e4ece2; border-color:#39483b; background:linear-gradient(135deg,#202e25,#1d2921); }
+:root[data-theme="dark"] .login-role-card:hover { color:#eff4eb; border-color:#61725e; }
+:root[data-theme="dark"] .login-role-copy small { color:#bdc9bb; }
+:root[data-theme="dark"] .login-role-copy b { color:#b9d0ab; }
+:root[data-theme="dark"] .management-role .login-role-copy b { color:#e0bb8d; }
+:root[data-theme="dark"] .login-role-icon { color:#d6e6cb; background:#344532; }
+:root[data-theme="dark"] .management-role .login-role-icon { color:#ebc794; background:#453a2d; }
+/* Distinct student and library-team entry points. */
+.login-choice-card { width:min(100%,580px); }
+.login-choice-card h1 { max-width:470px; font-size:clamp(28px,3vw,38px); }
+.login-choice-card > .muted { max-width:470px; }
+.login-role-grid { display:grid; gap:12px; margin-top:25px; }
+.login-role-card { display:flex; align-items:flex-start; gap:15px; padding:18px; border:1px solid #e8e6dc; border-radius:16px; background:linear-gradient(135deg,#fffefa,#f8f7ef); color:#2d3e31; text-decoration:none; transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease; }
+.login-role-card:hover { transform:translateY(-3px); border-color:#cbd4bc; box-shadow:0 14px 28px rgba(45,59,43,.1); color:#2d3e31; }
+.login-role-card:focus-visible,.auth-back-link:focus-visible { outline:3px solid #6b8a61; outline-offset:3px; }
+.login-role-icon { flex:none; display:grid; place-items:center; width:43px; height:43px; border-radius:14px; background:#e9efdf; color:#4b6846; font-size:21px; }
+.management-role .login-role-icon { background:#f2e8d8; color:#8b653e; }
+.login-role-copy { display:flex; flex:1; flex-direction:column; gap:5px; min-width:0; }
+.login-role-copy strong { font-family:Georgia,"Times New Roman",serif; font-size:19px; font-weight:500; }
+.login-role-copy small { color:#737d6f; font-size:11px; line-height:1.55; }
+.login-role-copy b { margin-top:6px; color:#456d49; font-size:11px; }
+.login-role-copy b span { padding-left:4px; }
+.management-role .login-role-copy b { color:#8a633e; }
+.login-choice-register { margin-top:22px!important; }
+.auth-back-link { display:inline-flex; align-items:center; gap:7px; margin:-8px 0 19px; color:#677464; font-size:11px; font-weight:650; text-decoration:none; }
+.auth-back-link:hover { color:#355b3c; }
+@media (max-width:720px) {
+  .login-choice-card { padding:29px 22px 25px; }
+  .login-role-card { padding:15px; }
+}
 @media (prefers-reduced-motion:reduce) {
   .dashboard-hero-note { animation:none!important; transform:none; }
   .book-pin,.book-pin-photo img,.pin-photo-action,.dashboard-hero-primary { transition:none!important; }
+  .login-role-card { transition:none; }
+  .login-role-card:hover { transform:none; }
 }

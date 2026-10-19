@@ -6,7 +6,7 @@ from datetime import timedelta, timezone
 from email.message import EmailMessage
 from urllib.parse import urlsplit
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy.exc import IntegrityError
 
@@ -93,16 +93,28 @@ def register():
     return render_template("auth/register.html")
 
 
-@bp.route("/login", methods=["GET", "POST"])
+@bp.route("/login", defaults={"account_type": None}, methods=["GET", "POST"])
+@bp.route("/login/<string:account_type>", methods=["GET", "POST"])
 @limiter.limit("10 per minute", methods=["POST"])
-def login():
+def login(account_type):
     if current_user.is_authenticated:
         return redirect(url_for("main.dashboard"))
+    if account_type not in {None, "student", "management"}:
+        abort(404)
+    if account_type is None:
+        if request.method == "POST":
+            flash("Choose Student or Library management before signing in.", "info")
+        return render_template("auth/login_choice.html")
+
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         user = User.query.filter_by(email=email, active=True).first()
-        if len(password) <= 256 and user and user.check_password(password):
+        role_allowed = (
+            (account_type == "student" and user and user.role == "member")
+            or (account_type == "management" and user and user.role in {"admin", "quality_manager"})
+        )
+        if len(password) <= 256 and user and role_allowed and user.check_password(password):
             session.clear()
             login_user(user, remember=False, fresh=True)
             session["_auth_version"] = user.auth_version
@@ -116,7 +128,7 @@ def login():
                 return redirect(next_url)
             return redirect(url_for("main.dashboard"))
         flash("Email or password was not recognized.", "danger")
-    return render_template("auth/login.html")
+    return render_template("auth/login.html", account_type=account_type)
 
 
 @bp.route("/password-reset", methods=["GET", "POST"])

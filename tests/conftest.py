@@ -57,4 +57,6 @@ def records(app):
 
 
 def login(client, email, password):
-    return client.post("/login", data={"email": email, "password": password}, follow_redirects=True)
+    # Test fixtures use named admin/quality accounts and student/member accounts.
+    account_type = "management" if email.split("@", 1)[0] in {"admin", "quality"} else "student"
+    return client.post(f"/login/{account_type}", data={"email": email, "password": password}, follow_redirects=True)

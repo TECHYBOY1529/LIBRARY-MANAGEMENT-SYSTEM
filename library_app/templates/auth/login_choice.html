@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}Choose sign in · Campus Library{% endblock %}
+{% block auth_content %}
+<section class="auth-card login-choice-card" aria-labelledby="loginChoiceTitle">
+  <div class="auth-card-mark" aria-hidden="true">✳</div>
+  <div class="eyebrow">CAMPUS LIBRARY</div>
+  <h1 id="loginChoiceTitle">Where would you like to go?</h1>
+  <p class="muted">Choose the sign-in that matches your library account. Each workspace has the tools and information for its role.</p>
+  <div class="login-role-grid">
+    <a class="login-role-card student-role" href="{{ url_for('auth.login', account_type='student', next=request.args.get('next')) }}">
+      <span class="login-role-icon" aria-hidden="true">✦</span>
+      <span class="login-role-copy"><strong>Student</strong><small>Discover books, manage loans, reservations and your library account.</small><b>Continue as a student <span aria-hidden="true">→</span></b></span>
+    </a>
+    <a class="login-role-card management-role" href="{{ url_for('auth.login', account_type='management', next=request.args.get('next')) }}">
+      <span class="login-role-icon" aria-hidden="true">▤</span>
+      <span class="login-role-copy"><strong>Library management</strong><small>Manage the catalog, circulation, members, reports and service quality.</small><b>Continue to management <span aria-hidden="true">→</span></b></span>
+    </a>
+  </div>
+  <p class="auth-link login-choice-register">New to the library? <a href="{{ url_for('auth.register') }}">Create a student account</a></p>
+  <p class="auth-demo-note"><span aria-hidden="true">◇</span> Demo sign-ins are listed in the project README.</p>
+</section>
+{% endblock %}

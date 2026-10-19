@@ -28,7 +28,62 @@ def test_login_and_logout(client, records):
     response = login(client, "member@test.edu", "MemberPassword!2026")
     assert b"MEMBER WORKSPACE" in response.data
     response = client.post("/logout", follow_redirects=True)
-    assert b"Good to see you." in response.data
+    assert b"Where would you like to go?" in response.data
+
+
+def test_login_choice_and_role_specific_signin_pages(client):
+    choice = client.get("/login")
+    assert choice.status_code == 200
+    assert b"Student" in choice.data
+    assert b"Library management" in choice.data
+    assert b"/login/student" in choice.data
+    assert b"/login/management" in choice.data
+
+    student = client.get("/login/student")
+    assert b"STUDENT WORKSPACE" in student.data
+    assert b"Create a student account" in student.data
+    management = client.get("/login/management")
+    assert b"LIBRARY TEAM" in management.data
+    assert b"Create a student account" not in management.data
+
+
+def test_unscoped_login_post_cannot_bypass_account_type_selection(client, records):
+    response = client.post("/login", data={
+        "email": "member@test.edu", "password": "MemberPassword!2026",
+    }, follow_redirects=True)
+    assert b"Choose Student or Library management" in response.data
+    assert b"Student" in response.data and b"Library management" in response.data
+    assert b"Where would you like to go?" in client.get("/account", follow_redirects=True).data
+
+
+def test_student_signin_opens_student_dashboard_and_rejects_staff(client, records):
+    response = client.post("/login/student", data={
+        "email": "member@test.edu", "password": "MemberPassword!2026",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"MEMBER WORKSPACE" in response.data
+
+    client.post("/logout")
+    response = client.post("/login/student", data={
+        "email": "admin@test.edu", "password": "AdminPassword!2026",
+    }, follow_redirects=True)
+    assert b"Email or password was not recognized." in response.data
+    assert b"Where would you like to go?" in client.get("/account", follow_redirects=True).data
+
+
+def test_management_signin_opens_staff_dashboard_and_rejects_students(client, records):
+    response = client.post("/login/management", data={
+        "email": "admin@test.edu", "password": "AdminPassword!2026",
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Add a book" in response.data
+
+    client.post("/logout")
+    response = client.post("/login/management", data={
+        "email": "member@test.edu", "password": "MemberPassword!2026",
+    }, follow_redirects=True)
+    assert b"Email or password was not recognized." in response.data
+    assert b"Where would you like to go?" in client.get("/account", follow_redirects=True).data
 
 
 def test_account_profile_and_password_update(client, records, app):
@@ -77,7 +132,7 @@ def test_password_change_invalidates_other_signed_in_sessions(app, records):
     }, follow_redirects=True)
     assert b"Your password has been changed. Sign in again." in response.data
     g.pop("_login_user", None)
-    assert b"Good to see you." in second_client.get("/account", follow_redirects=True).data
+    assert b"Where would you like to go?" in second_client.get("/account", follow_redirects=True).data
 
 
 def test_member_suspension_revokes_sessions_even_after_reactivation(app, records):
@@ -103,7 +158,7 @@ def test_member_suspension_revokes_sessions_even_after_reactivation(app, records
         assert member.active is True and member.auth_version == 2
     g.pop("_login_user", None)
     response = member_client.get("/account", follow_redirects=True)
-    assert b"Good to see you." in response.data
+    assert b"Where would you like to go?" in response.data
 
 
 def test_login_is_rate_limited(client):

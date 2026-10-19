@@ -1,4 +1,20 @@
-{% extends 'base.html' %}{% block title %}Sign in · Campus Library{% endblock %}
-{% block auth_content %}<section class="auth-card login-card"><div class="auth-card-mark" aria-hidden="true">✳</div><div class="eyebrow">WELCOME BACK</div><h1>Good to see you.</h1><p class="muted">Sign in to find your books, pick up where you left off, and explore what’s on the shelves.</p>
-<form method="post" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Email address<input type="email" name="email" required autocomplete="username" class="form-control" autofocus placeholder="you@campus.edu"></label><label>Password<input type="password" name="password" required autocomplete="current-password" class="form-control" placeholder="Enter your password"></label><button class="btn btn-primary btn-lg w-100" type="submit">Sign in <span aria-hidden="true">→</span></button></form>
-<p class="auth-link"><a href="{{ url_for('auth.password_reset_request') }}">Forgot your password?</a></p><p class="auth-link">New to the library? <a href="{{ url_for('auth.register') }}">Create a member account</a></p><p class="auth-demo-note"><span aria-hidden="true">◇</span> Demo sign-ins are listed in the project README.</p></section>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}{% if account_type == 'management' %}Library management sign in{% else %}Student sign in{% endif %} · Campus Library{% endblock %}
+{% block auth_content %}
+<section class="auth-card login-card">
+  <a class="auth-back-link" href="{{ url_for('auth.login', next=request.args.get('next')) }}"><span aria-hidden="true">←</span> Choose account type</a>
+  <div class="auth-card-mark" aria-hidden="true">{% if account_type == 'management' %}▤{% else %}✦{% endif %}</div>
+  <div class="eyebrow">{% if account_type == 'management' %}LIBRARY TEAM{% else %}STUDENT WORKSPACE{% endif %}</div>
+  <h1>{% if account_type == 'management' %}Welcome, library team.{% else %}Good to see you.{% endif %}</h1>
+  <p class="muted">{% if account_type == 'management' %}Sign in to manage books, members, borrowing and library service quality.{% else %}Sign in to discover books, manage your borrowing and explore your course shelves.{% endif %}</p>
+  <form method="post" action="{{ url_for('auth.login', account_type=account_type, next=request.args.get('next')) }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Email address<input type="email" name="email" required autocomplete="username" class="form-control" autofocus placeholder="you@campus.edu"></label>
+    <label>Password<input type="password" name="password" required autocomplete="current-password" class="form-control" placeholder="Enter your password"></label>
+    <button class="btn btn-primary btn-lg w-100" type="submit">Sign in to {% if account_type == 'management' %}management{% else %}your library{% endif %} <span aria-hidden="true">→</span></button>
+  </form>
+  <p class="auth-link"><a href="{{ url_for('auth.password_reset_request') }}">Forgot your password?</a></p>
+  {% if account_type == 'student' %}<p class="auth-link">New to the library? <a href="{{ url_for('auth.register') }}">Create a student account</a></p>{% endif %}
+  <p class="auth-demo-note"><span aria-hidden="true">◇</span> Demo sign-ins are listed in the project README.</p>
+</section>
+{% endblock %}
