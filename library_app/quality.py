@@ -201,8 +201,13 @@ def action_status(action_id):
     if status not in {"pending", "in_progress", "completed"}:
         flash("Choose a valid action status.", "danger")
     else:
+        was_completed = row.status == "completed"
         row.status = status
-        row.completed_at = utcnow() if status == "completed" else None
+        if status == "completed":
+            if not was_completed or row.completed_at is None:
+                row.completed_at = utcnow()
+        else:
+            row.completed_at = None
         audit(current_user, "update_improvement_action", "improvement_action", row.id, status)
         db.session.commit()
         flash("Improvement action updated.", "success")
