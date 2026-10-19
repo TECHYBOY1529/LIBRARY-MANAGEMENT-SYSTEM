@@ -1,17 +1,23 @@
+import csv
+import io
+import json
 import re
-from datetime import date, datetime
+import uuid
+from datetime import date, datetime, timedelta, timezone
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import contains_eager, selectinload
+from werkzeug.utils import secure_filename
 
 from .extensions import db
-from .models import Author, Book, BookCopy, Category, Loan, Publisher, Reservation, User, utcnow
+from .models import Author, Book, BookCopy, CatalogImportBatch, Category, Course, Loan, Publisher, Reservation, User, utcnow
 from .security import roles_required
-from .services import audit, cancel_reservation, issue_book, return_book
+from .services import audit, cancel_reservation, configured_value, issue_book, return_book
 
 bp = Blueprint("catalog", __name__)
-LOOKUPS = {"authors": Author, "categories": Category, "publishers": Publisher}
+LOOKUPS = {"authors": Author, "categories": Category, "publishers": Publisher, "courses": Course}
 
 
 def is_valid_isbn(value):
@@ -31,37 +37,184 @@ def is_valid_isbn(value):
 @bp.get("/books")
 @login_required
 def books():
-    query = Book.query.join(Book.author).join(Book.category).join(Book.publisher)
-    q = request.args.get("q", "").strip()
+    query = (Book.query.join(Book.author).join(Book.category).join(Book.publisher).outerjoin(Book.course)
+             .options(contains_eager(Book.author), contains_eager(Book.category), contains_eager(Book.publisher),
+                      contains_eager(Book.course), selectinload(Book.copies)))
+    q = request.args.get("q", "").strip()[:120]
     category_id = request.args.get("category", type=int)
+    course_id = request.args.get("course", type=int)
+    semester = request.args.get("semester", type=int)
+    if semester is not None and not 1 <= semester <= 12:
+        semester = None
+    availability = request.args.get("availability", "")
     if q:
         like = f"%{q}%"
-        query = query.filter(db.or_(Book.title.ilike(like), Book.isbn.ilike(like), Author.name.ilike(like)))
+        query = query.filter(db.or_(Book.title.ilike(like), Book.isbn.ilike(like), Author.name.ilike(like),
+                                    Category.name.ilike(like), Publisher.name.ilike(like), Course.name.ilike(like)))
     if category_id:
         query = query.filter(Book.category_id == category_id)
-    if request.args.get("availability") == "available":
+    if course_id:
+        query = query.filter(Book.course_id == course_id)
+    if semester and 1 <= semester <= 12:
+        query = query.filter(Book.semester == semester)
+    if availability == "available":
         query = query.filter(Book.copies.any(status="available"))
-    pagination = query.order_by(Book.title).paginate(page=request.args.get("page", 1, type=int), per_page=15, error_out=False)
-    return render_template("books.html", pagination=pagination, categories=Category.query.order_by(Category.name).all(), q=q)
+    elif availability == "unavailable":
+        query = query.filter(~Book.copies.any(status="available"))
+    sort = request.args.get("sort", "title")
+    ordering = {"title": Book.title.asc(), "year_desc": Book.publication_year.desc(),
+                "year_asc": Book.publication_year.asc(), "author": Author.name.asc()}.get(sort, Book.title.asc())
+    pagination = query.order_by(ordering, Book.id.asc()).paginate(page=request.args.get("page", 1, type=int), per_page=15, error_out=False)
+    return render_template("books.html", pagination=pagination,
+                           categories=Category.query.order_by(Category.name).all(),
+                           courses=Course.query.order_by(Course.name).all(), q=q, sort=sort,
+                           category_id=category_id, course_id=course_id, semester=semester,
+                           availability=availability)
+
+
+def _validated_import_rows(rows):
+    valid, errors, seen = [], [], set()
+    known_authors = {item.name.casefold(): item.id for item in Author.query.all()}
+    known_categories = {item.name.casefold(): item.id for item in Category.query.all()}
+    known_publishers = {item.name.casefold(): item.id for item in Publisher.query.all()}
+    known_courses = {item.name.casefold(): item.id for item in Course.query.all()}
+    existing_isbns = {re.sub(r"[-\s]", "", value).upper() for (value,) in db.session.query(Book.isbn).all()}
+    for line, raw in enumerate(rows, start=2):
+        data = {str(key or "").strip().lower(): str(value or "").strip() for key, value in raw.items()}
+        isbn, title = data.get("isbn", ""), data.get("title", "")
+        normalized = re.sub(r"[-\s]", "", isbn).upper()
+        issues = []
+        if not is_valid_isbn(isbn): issues.append("invalid ISBN")
+        if not title or len(title) > 240: issues.append("title is required (maximum 240 characters)")
+        try: year = int(data.get("publication_year", ""))
+        except (TypeError, ValueError): year = 0
+        if year < 1450 or year > date.today().year + 1: issues.append("invalid publication year")
+        try: copies = int(data.get("copies", ""))
+        except (TypeError, ValueError): copies = 0
+        if not 1 <= copies <= 500: issues.append("copies must be between 1 and 500")
+        author_id = known_authors.get(data.get("author", "").casefold())
+        category_name = (data.get("category") or data.get("subject", "")).strip()
+        category_id = known_categories.get(category_name.casefold())
+        publisher_id = known_publishers.get(data.get("publisher", "").casefold())
+        course_name = data.get("course", "").strip().casefold()
+        course_id = known_courses.get(course_name) if course_name else None
+        semester_text = data.get("semester", "").strip()
+        try: semester = int(semester_text) if semester_text else None
+        except ValueError: semester = 0
+        if bool(course_name) != bool(semester_text): issues.append("course and semester must be supplied together")
+        if not author_id: issues.append("author must already exist in catalog metadata")
+        if not category_id: issues.append("category must already exist in catalog metadata")
+        if not publisher_id: issues.append("publisher must already exist in catalog metadata")
+        if course_name and not course_id: issues.append("course must already exist in catalog metadata")
+        if semester is not None and not 1 <= semester <= 12: issues.append("semester must be between 1 and 12")
+        if normalized in seen or normalized in existing_isbns: issues.append("duplicate ISBN")
+        seen.add(normalized)
+        if issues:
+            errors.append({"line": line, "isbn": isbn, "messages": issues})
+        else:
+            valid.append({"isbn": normalized, "title": title, "publication_year": year, "copies": copies,
+                          "author_id": author_id, "category_id": category_id, "publisher_id": publisher_id,
+                          "course_id": course_id, "course_name": data.get("course", "").strip(),
+                          "category_name": category_name, "semester": semester})
+    return valid, errors
+
+
+@bp.route("/books/import", methods=["GET", "POST"])
+@roles_required("admin")
+def books_import():
+    if request.method == "POST" and request.form.get("action") == "upload":
+        upload = request.files.get("file")
+        if not upload or not upload.filename or not upload.filename.lower().endswith(".csv"):
+            flash("Choose a CSV file to import.", "danger")
+            return redirect(url_for("catalog.books_import"))
+        content = upload.stream.read(2 * 1024 * 1024 + 1)
+        if len(content) > 2 * 1024 * 1024:
+            flash("The CSV file must be no larger than 2 MB.", "danger")
+            return redirect(url_for("catalog.books_import"))
+        try:
+            reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig"), newline=""))
+            expected = {"isbn", "title", "author", "publisher", "publication_year", "copies"}
+            headers = {str(item or "").strip().lower() for item in (reader.fieldnames or [])}
+            if not expected.issubset(headers) or not ({"category", "subject"} & headers): raise ValueError("CSV needs these columns: ISBN, title, author, subject (or category), publisher, publication_year, copies. Course and semester are optional.")
+            source_rows = list(reader)
+            if not source_rows: raise ValueError("The CSV contains no book rows.")
+            if len(source_rows) > 500: raise ValueError("Import up to 500 book rows at a time.")
+            valid, errors = _validated_import_rows(source_rows)
+        except (UnicodeDecodeError, csv.Error, ValueError) as error:
+            flash(str(error) or "The CSV file could not be read. Save it as UTF-8 and try again.", "danger")
+            return redirect(url_for("catalog.books_import"))
+        batch = CatalogImportBatch(owner_id=current_user.id, filename=secure_filename(upload.filename)[:255] or "catalog.csv",
+                                   rows_json=json.dumps(valid), row_errors_json=json.dumps(errors),
+                                   expires_at=utcnow() + timedelta(minutes=30))
+        db.session.add(batch)
+        db.session.commit()
+        return render_template("catalog_import.html", batch=batch, preview=json.loads(batch.rows_json), errors=json.loads(batch.row_errors_json))
+    batch_id = request.form.get("batch_id", type=int) if request.method == "POST" else request.args.get("batch_id", type=int)
+    if request.method == "POST" and request.form.get("action") == "import":
+        batch = CatalogImportBatch.query.filter_by(id=batch_id, owner_id=current_user.id).first_or_404()
+        expires = batch.expires_at.replace(tzinfo=timezone.utc) if batch.expires_at.tzinfo is None else batch.expires_at
+        if batch.imported_at or expires <= utcnow():
+            flash("This preview has expired or has already been imported. Upload the file again.", "warning")
+            return redirect(url_for("catalog.books_import"))
+        rows = json.loads(batch.rows_json)
+        errors = json.loads(batch.row_errors_json)
+        if errors or not rows:
+            flash("Fix every row error and upload the corrected CSV before importing.", "danger")
+            return redirect(url_for("catalog.books_import", batch_id=batch.id))
+        try:
+            existing_isbns = {re.sub(r"[-\s]", "", value).upper() for (value,) in db.session.query(Book.isbn).all()}
+            for data in rows:
+                if data["isbn"] in existing_isbns:
+                    raise ValueError(f"ISBN {data['isbn']} was added after this preview. Upload the file again to refresh validation.")
+                book = Book(isbn=data["isbn"], title=data["title"], publication_year=data["publication_year"],
+                            author_id=data["author_id"], category_id=data["category_id"], publisher_id=data["publisher_id"],
+                            course_id=data.get("course_id"), semester=data.get("semester"))
+                db.session.add(book)
+                db.session.flush()
+                for _ in range(data["copies"]):
+                    db.session.add(BookCopy(book_id=book.id, barcode=f"LIB-{book.id:05d}-{uuid.uuid4().hex[:8].upper()}"))
+                audit(current_user, "import_book", "book", book.id, f"batch={batch.id}; copies={data['copies']}")
+            batch.imported_at = utcnow()
+            db.session.commit()
+        except (ValueError, IntegrityError) as error:
+            db.session.rollback()
+            flash(str(error) if isinstance(error, ValueError) else "An ISBN or barcode changed during import. No rows were imported; upload the CSV again.", "danger")
+            return redirect(url_for("catalog.books_import"))
+        flash(f"Imported {len(rows)} titles and their copies.", "success")
+        return redirect(url_for("catalog.books"))
+    if batch_id:
+        batch = CatalogImportBatch.query.filter_by(id=batch_id, owner_id=current_user.id).first_or_404()
+        expires = batch.expires_at.replace(tzinfo=timezone.utc) if batch.expires_at.tzinfo is None else batch.expires_at
+        if expires <= utcnow() or batch.imported_at:
+            flash("This preview is no longer available. Upload the CSV again.", "warning")
+            return redirect(url_for("catalog.books_import"))
+        return render_template("catalog_import.html", batch=batch, preview=json.loads(batch.rows_json), errors=json.loads(batch.row_errors_json))
+    return render_template("catalog_import.html", batch=None, preview=[], errors=[])
 
 
 def book_form_data():
-    isbn = request.form.get("isbn", "").strip()
+    isbn = re.sub(r"[-\s]", "", request.form.get("isbn", "")).upper()
     title = request.form.get("title", "").strip()
     year = request.form.get("publication_year", type=int)
     author_id = request.form.get("author_id", type=int)
     category_id = request.form.get("category_id", type=int)
     publisher_id = request.form.get("publisher_id", type=int)
+    course_id = request.form.get("course_id", type=int)
+    semester = request.form.get("semester", type=int)
     if not is_valid_isbn(isbn):
         raise ValueError("Enter a valid ISBN (10 or 13 digits, hyphens allowed).")
     if not title or len(title) > 240:
         raise ValueError("Title is required and must be at most 240 characters.")
     if not year or year < 1450 or year > date.today().year + 1:
         raise ValueError("Enter a valid publication year.")
-    if not all([db.session.get(Author, author_id), db.session.get(Category, category_id), db.session.get(Publisher, publisher_id)]):
-        raise ValueError("Choose an existing author, category, and publisher.")
+    if not all([db.session.get(Author, author_id), db.session.get(Category, category_id),
+                db.session.get(Publisher, publisher_id), db.session.get(Course, course_id)]):
+        raise ValueError("Choose an existing author, subject, publisher, and course.")
+    if semester is None or not 1 <= semester <= 12:
+        raise ValueError("Choose a semester from 1 to 12.")
     return {"isbn": isbn, "title": title, "publication_year": year, "author_id": author_id,
-            "category_id": category_id, "publisher_id": publisher_id}
+            "category_id": category_id, "publisher_id": publisher_id,
+            "course_id": course_id, "semester": semester}
 
 
 @bp.route("/books/new", methods=["GET", "POST"])
@@ -90,7 +243,7 @@ def book_new():
         except IntegrityError:
             db.session.rollback()
             flash("Could not save the book. Check that its ISBN and barcode are unique.", "danger")
-    return render_template("book_form.html", book=None, authors=Author.query.order_by(Author.name).all(), categories=Category.query.order_by(Category.name).all(), publishers=Publisher.query.order_by(Publisher.name).all())
+    return render_template("book_form.html", book=None, authors=Author.query.order_by(Author.name).all(), categories=Category.query.order_by(Category.name).all(), publishers=Publisher.query.order_by(Publisher.name).all(), courses=Course.query.order_by(Course.name).all())
 
 
 @bp.route("/books/<int:book_id>/edit", methods=["GET", "POST"])
@@ -120,7 +273,7 @@ def book_edit(book_id):
         except IntegrityError:
             db.session.rollback()
             flash("Could not save changes. Check the ISBN and generated barcodes.", "danger")
-    return render_template("book_form.html", book=book, authors=Author.query.order_by(Author.name).all(), categories=Category.query.order_by(Category.name).all(), publishers=Publisher.query.order_by(Publisher.name).all())
+    return render_template("book_form.html", book=book, authors=Author.query.order_by(Author.name).all(), categories=Category.query.order_by(Category.name).all(), publishers=Publisher.query.order_by(Publisher.name).all(), courses=Course.query.order_by(Course.name).all())
 
 
 @bp.post("/books/<int:book_id>/delete")
@@ -240,7 +393,7 @@ def loans():
         member_id = request.form.get("member_id", type=int)
         book_id = request.form.get("book_id", type=int)
         try:
-            issue_book(member_id, book_id, current_user, current_app.config["DEFAULT_LOAN_DAYS"])
+            issue_book(member_id, book_id, current_user, configured_value("DEFAULT_LOAN_DAYS"))
             flash("Book issued successfully.", "success")
         except ValueError as error:
             flash(str(error), "danger")
@@ -253,14 +406,15 @@ def loans():
     books = Book.query.order_by(Book.title).all()
     ready_reservations = Reservation.query.filter_by(status="ready").order_by(Reservation.created_at).all()
     return render_template("loans.html", pagination=rows, members=members, books=books,
-                           ready_reservations=ready_reservations, today=date.today())
+                           ready_reservations=ready_reservations, today=date.today(),
+                           loan_days=configured_value("DEFAULT_LOAN_DAYS"), fine_rate=configured_value("FINE_PER_DAY"))
 
 
 @bp.post("/loans/<int:loan_id>/return")
 @roles_required("admin")
 def loan_return(loan_id):
     try:
-        return_book(loan_id, current_user, current_app.config["FINE_PER_DAY"])
+        return_book(loan_id, current_user, configured_value("FINE_PER_DAY"))
         flash("Return processed and inventory updated.", "success")
     except ValueError as error:
         flash(str(error), "danger")
@@ -316,7 +470,7 @@ def reservation_checkout(reservation_id):
     reservation = db.get_or_404(Reservation, reservation_id)
     try:
         issue_book(reservation.member_id, reservation.book_id, current_user,
-                   current_app.config["DEFAULT_LOAN_DAYS"], reservation_id=reservation.id)
+                   configured_value("DEFAULT_LOAN_DAYS"), reservation_id=reservation.id)
         flash("Ready reservation checked out to the member.", "success")
     except ValueError as error:
         flash(str(error), "danger")

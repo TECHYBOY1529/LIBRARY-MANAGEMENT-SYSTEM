@@ -1,0 +1,41 @@
+{% set shelf_images = [
+  'images/books/book-stack.jpg',
+  'images/books/books-table.jpg',
+  'images/books/open-book.jpg',
+  'images/books/reading-book.jpg',
+  'images/books/study-room.jpg',
+  'images/books/library-shelves.jpg'
+] %}
+<section class="discovery-shelf dashboard-reveal" aria-labelledby="discoveryTitle">
+  <div class="discovery-heading">
+    <div><span class="eyebrow">A COLLECTION TO GET LOST IN</span><h2 id="discoveryTitle">Find your next read</h2><p>Browse real shelves of books by your course, subject, or semester.</p></div>
+    <a class="discovery-all-link" href="{{ url_for('catalog.books') }}">See the whole catalog <span aria-hidden="true">↗</span></a>
+  </div>
+  {% if course_shelves or subject_shelves %}
+  <div class="discovery-filter-shelves">
+    {% if course_shelves %}<div class="discovery-chip-row" aria-label="Browse by course"><span class="discovery-chip-label">COURSES</span>{% for course_id, course_name, book_count in course_shelves %}<a href="{{ url_for('catalog.books', course=course_id) }}">{{ course_name }}<small>{{ book_count }}</small></a>{% endfor %}</div>{% endif %}
+    {% if subject_shelves %}<div class="discovery-chip-row" aria-label="Browse by subject"><span class="discovery-chip-label">SUBJECTS</span>{% for subject_id, subject_name, book_count in subject_shelves %}<a href="{{ url_for('catalog.books', category=subject_id) }}">{{ subject_name }}<small>{{ book_count }}</small></a>{% endfor %}</div>{% endif %}
+  </div>
+  {% endif %}
+  {% if discovery_books %}
+  <div class="discovery-grid">
+    {% for book in discovery_books %}
+    <article class="book-pin book-pin-size-{{ loop.index0 % 4 }}">
+      <a class="book-pin-photo" href="{{ url_for('catalog.books', q=book.title) }}" aria-label="Explore {{ book.title }} by {{ book.author.name }}">
+        <img src="{{ url_for('static', filename=shelf_images[(book.id - 1) % (shelf_images|length)]) }}" alt="Books and reading materials from the {{ book.category.name }} shelf" loading="lazy">
+        <span class="pin-subject">{{ book.category.name }}</span>
+        <span class="pin-photo-action" aria-hidden="true">Explore title <b>↗</b></span>
+      </a>
+      <div class="book-pin-copy">
+        <div class="book-pin-context"><span>{{ book.course.name if book.course else 'Course not assigned' }}</span><span>{{ 'SEM ' ~ book.semester if book.semester else 'SEM —' }}</span></div>
+        <a class="book-pin-title" href="{{ url_for('catalog.books', q=book.title) }}">{{ book.title }}</a>
+        <p>by {{ book.author.name }}</p>
+        <div class="book-pin-availability"><span class="availability-mark {{ 'is-available' if book.available_copies else 'is-unavailable' }}"></span><span>{{ book.available_copies }} of {{ book.total_copies }} available</span><a href="{{ url_for('catalog.books', q=book.title) }}" aria-label="View {{ book.title }} in the catalog">View</a></div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="discovery-empty"><span aria-hidden="true">✳</span><strong>Your book wall starts here.</strong><p>Add titles to the catalog and they will appear here.</p>{% if current_user.role == 'admin' %}<a href="{{ url_for('catalog.book_new') }}" class="btn btn-primary">Add the first title</a>{% endif %}</div>
+  {% endif %}
+</section>

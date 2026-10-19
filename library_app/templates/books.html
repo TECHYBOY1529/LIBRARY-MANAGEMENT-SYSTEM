@@ -1,5 +1,64 @@
-{% extends 'base.html' %}{% block title %}Book catalog · Campus Library{% endblock %}{% block page_context %}Book catalog{% endblock %}
-{% block content %}<div class="page-heading"><div><div class="eyebrow">COLLECTION</div><h1>Book catalog</h1><p>Search the collection and check real-time copy availability.</p></div>{% if current_user.role=='admin' %}<a class="btn btn-primary" href="{{ url_for('catalog.book_new') }}">＋ Add book</a>{% endif %}</div>
-<section class="panel"><form class="catalog-filters" method="get"><label class="search-field"><span>⌕</span><input type="search" name="q" value="{{ q }}" placeholder="Search by title, ISBN, or author" aria-label="Search catalog"></label><select name="category" class="form-select" aria-label="Filter by category"><option value="">All categories</option>{% for category in categories %}<option value="{{ category.id }}" {% if request.args.get('category')==category.id|string %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select><select name="availability" class="form-select" aria-label="Filter by availability"><option value="">Any availability</option><option value="available" {% if request.args.get('availability')=='available' %}selected{% endif %}>Available now</option></select><button class="btn btn-primary" type="submit">Search</button><a class="btn btn-light" href="{{ url_for('catalog.books') }}">Reset</a></form>
-<div class="table-responsive"><table class="table clean-table sortable-table"><thead><tr><th>Book</th><th>ISBN</th><th>Category</th><th>Publisher</th><th>Year</th><th>Availability</th>{% if current_user.role in ['admin','member'] %}<th>Action</th>{% endif %}</tr></thead><tbody>{% for book in pagination.items %}<tr><td><strong>{{ book.title }}</strong><small class="d-block muted">{{ book.author.name }}</small></td><td>{{ book.isbn }}</td><td>{{ book.category.name }}</td><td>{{ book.publisher.name }}</td><td>{{ book.publication_year }}</td><td>{% if book.available_copies %}<span class="status-badge green">{{ book.available_copies }} available</span>{% else %}<span class="status-badge amber">On loan</span>{% endif %}<small class="d-block muted">{{ book.total_copies }} total copies</small></td><td class="actions-cell">{% if current_user.role=='admin' %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('catalog.book_edit',book_id=book.id) }}">Edit</a><form method="post" action="{{ url_for('catalog.book_delete',book_id=book.id) }}" class="inline-form" data-confirm="Remove this book from the catalog? This cannot be undone."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger" type="submit">Delete</button></form>{% elif current_user.role=='member' %}<form method="post" action="{{ url_for('catalog.reserve',book_id=book.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-primary" type="submit">{{ 'Reserve copy' if book.available_copies else 'Join waitlist' }}</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="7" class="empty-table">No books matched your search.</td></tr>{% endfor %}</tbody></table></div>
-<div class="pagination-row"><span>{{ pagination.total }} title{{ '' if pagination.total==1 else 's' }}</span><nav aria-label="Catalog pages"><ul class="pagination pagination-sm mb-0">{% if pagination.has_prev %}<li class="page-item"><a class="page-link" href="{{ url_for('catalog.books',page=pagination.prev_num,q=q,category=request.args.get('category',''),availability=request.args.get('availability','')) }}">Previous</a></li>{% endif %}<li class="page-item active"><span class="page-link">{{ pagination.page }} / {{ pagination.pages or 1 }}</span></li>{% if pagination.has_next %}<li class="page-item"><a class="page-link" href="{{ url_for('catalog.books',page=pagination.next_num,q=q,category=request.args.get('category',''),availability=request.args.get('availability','')) }}">Next</a></li>{% endif %}</ul></nav></div></section>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Library catalog · Campus Library{% endblock %}
+{% block page_context %}Explore the collection{% endblock %}
+{% block content %}
+{% set shelf_images = ['images/books/book-stack.jpg','images/books/books-table.jpg','images/books/open-book.jpg','images/books/reading-book.jpg','images/books/study-room.jpg','images/books/library-shelves.jpg'] %}
+<section class="catalog-masthead">
+  <div class="catalog-masthead-copy"><span class="eyebrow">A CAMPUS FULL OF IDEAS</span><h1>Explore the collection</h1><p>Find a book by course, subject, semester, or the question on your mind.</p></div>
+  <div class="catalog-masthead-count"><strong>{{ pagination.total }}</strong><span>titles<br>to explore</span></div>
+  {% if current_user.role == 'admin' %}<div class="catalog-heading-actions"><a class="btn btn-light" href="{{ url_for('catalog.books_import') }}">Import CSV</a><a class="btn btn-primary" href="{{ url_for('catalog.book_new') }}">＋ Add a book</a></div>{% endif %}
+</section>
+
+<section class="panel catalog-filter-panel" aria-label="Catalog filters">
+  <div class="catalog-panel-heading"><div><span class="catalog-panel-icon" aria-hidden="true">⌕</span><div><h2>Make it yours</h2><p>Choose a course, subject, or semester to narrow your shelf.</p></div></div>
+    {% if q or category_id or course_id or semester or availability %}<a class="catalog-reset" href="{{ url_for('catalog.books') }}">Clear filters</a>{% endif %}
+  </div>
+  <form class="catalog-filter-grid" method="get" role="search">
+    <label class="search-field catalog-search-field"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ q }}" placeholder="Try a title, author, or ISBN" aria-label="Search books, authors, publishers and courses"></label>
+    <label class="catalog-select"><span>Course</span><select name="course" class="form-select" aria-label="Filter by course"><option value="">All courses</option>{% for course in courses %}<option value="{{ course.id }}" {% if course_id == course.id %}selected{% endif %}>{{ course.name }}</option>{% endfor %}</select></label>
+    <label class="catalog-select"><span>Subject</span><select name="category" class="form-select" aria-label="Filter by subject"><option value="">All subjects</option>{% for category in categories %}<option value="{{ category.id }}" {% if category_id == category.id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></label>
+    <label class="catalog-select"><span>Semester</span><select name="semester" class="form-select" aria-label="Filter by semester"><option value="">Any semester</option>{% for term in range(1,13) %}<option value="{{ term }}" {% if semester == term %}selected{% endif %}>Semester {{ term }}</option>{% endfor %}</select></label>
+    <label class="catalog-select"><span>Availability</span><select name="availability" class="form-select" aria-label="Filter by availability"><option value="">Any availability</option><option value="available" {% if availability == 'available' %}selected{% endif %}>Available now</option><option value="unavailable" {% if availability == 'unavailable' %}selected{% endif %}>No copies available</option></select></label>
+    <label class="catalog-select"><span>Sort</span><select name="sort" class="form-select" aria-label="Sort catalog"><option value="title" {% if sort == 'title' %}selected{% endif %}>Title A–Z</option><option value="year_desc" {% if sort == 'year_desc' %}selected{% endif %}>Newest first</option><option value="year_asc" {% if sort == 'year_asc' %}selected{% endif %}>Oldest first</option><option value="author" {% if sort == 'author' %}selected{% endif %}>Author A–Z</option></select></label>
+    <button class="btn btn-primary catalog-apply" type="submit">Find books <span aria-hidden="true">→</span></button>
+  </form>
+</section>
+
+<div class="catalog-results-heading"><div><span class="eyebrow">YOUR NEXT GREAT READ</span><h2>Books on the shelf</h2><p><strong>{{ pagination.total }}</strong> title{{ '' if pagination.total == 1 else 's' }} found{% if pagination.total %}<span> · Showing {{ pagination.first }}–{{ pagination.last }}</span>{% endif %}</p></div>
+  <div class="catalog-view-toggle" role="group" aria-label="Catalog layout"><button type="button" class="catalog-view-button is-active" data-catalog-view="grid" aria-pressed="true"><span aria-hidden="true">▦</span> Visual shelf</button><button type="button" class="catalog-view-button" data-catalog-view="table" aria-pressed="false"><span aria-hidden="true">☷</span> List</button></div>
+</div>
+
+{% if pagination.items %}
+<div class="book-grid discovery-grid" data-catalog-panel="grid">
+  {% for book in pagination.items %}
+  <article class="book-card book-pin book-pin-size-{{ loop.index0 % 4 }}">
+    <a class="book-card-cover book-pin-photo" href="{{ url_for('catalog.books', q=book.title) }}" aria-label="Explore {{ book.title }} by {{ book.author.name }}">
+      <img src="{{ url_for('static', filename=shelf_images[(book.id - 1) % (shelf_images|length)]) }}" alt="Books and reading materials from the {{ book.category.name }} shelf" loading="lazy">
+      <span class="pin-subject">{{ book.category.name }}</span><span class="book-cover-status {{ 'is-available' if book.available_copies else 'is-unavailable' }}">{{ 'Available now' if book.available_copies else 'Currently borrowed' }}</span>
+    </a>
+    <div class="book-pin-copy">
+      <div class="book-pin-context"><span>{{ book.course.name if book.course else 'Course not assigned' }}</span><span>{{ 'SEM ' ~ book.semester if book.semester else 'SEM —' }}</span></div>
+      <a class="book-pin-title" href="{{ url_for('catalog.books', q=book.title) }}">{{ book.title }}</a><p>by {{ book.author.name }}</p>
+      <div class="book-pin-facts"><span>{{ book.category.name }}</span><span>{{ book.publication_year }}</span><span>{{ book.available_copies }} / {{ book.total_copies }} available</span></div>
+      {% if current_user.role in ['admin', 'member'] %}<div class="book-card-actions">
+        {% if current_user.role == 'admin' %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('catalog.book_edit', book_id=book.id) }}">Edit book</a><form method="post" action="{{ url_for('catalog.book_delete', book_id=book.id) }}" data-confirm="Remove this book and its copies from the catalog? This cannot be undone."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>
+        {% else %}<form method="post" action="{{ url_for('catalog.reserve', book_id=book.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-primary" type="submit">{{ 'Reserve a copy' if book.available_copies else 'Join the waitlist' }} <span aria-hidden="true">→</span></button></form>{% endif %}
+      </div>{% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</div>
+
+<section class="panel catalog-table-panel" data-catalog-panel="table" hidden><div class="table-responsive"><table class="table clean-table sortable-table"><thead><tr><th>Book</th><th>Course</th><th>Subject</th><th>Semester</th><th>ISBN</th><th>Availability</th>{% if current_user.role in ['admin', 'member'] %}<th>Action</th>{% endif %}</tr></thead><tbody>
+  {% for book in pagination.items %}<tr><td><strong>{{ book.title }}</strong><small class="d-block muted">{{ book.author.name }}</small></td><td>{{ book.course.name if book.course else 'Unassigned' }}</td><td>{{ book.category.name }}</td><td>{{ book.semester if book.semester else '—' }}</td><td>{{ book.isbn }}</td><td>{% if book.available_copies %}<span class="status-badge green">{{ book.available_copies }} available</span>{% else %}<span class="status-badge amber">On loan</span>{% endif %}</td>{% if current_user.role in ['admin', 'member'] %}<td class="actions-cell">{% if current_user.role == 'admin' %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('catalog.book_edit', book_id=book.id) }}">Edit</a>{% else %}<form method="post" action="{{ url_for('catalog.reserve', book_id=book.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-primary" type="submit">Reserve</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}
+</tbody></table></div></section>
+{% else %}
+<section class="panel catalog-empty"><span aria-hidden="true">⌕</span><h2>No books found on this shelf</h2><p>Try another course, subject, semester, or search term.</p><a class="btn btn-outline-primary" href="{{ url_for('catalog.books') }}">Show all books</a></section>
+{% endif %}
+
+<div class="pagination-row catalog-pagination"><span>Page {{ pagination.page }} of {{ pagination.pages or 1 }}</span><nav aria-label="Catalog pages"><ul class="pagination pagination-sm mb-0">
+{% if pagination.has_prev %}<li class="page-item"><a class="page-link" href="{{ url_for('catalog.books', page=pagination.prev_num, q=q, category=category_id or '', course=course_id or '', semester=semester or '', availability=availability, sort=sort) }}">← Previous</a></li>{% endif %}
+<li class="page-item active"><span class="page-link">{{ pagination.page }}</span></li>
+{% if pagination.has_next %}<li class="page-item"><a class="page-link" href="{{ url_for('catalog.books', page=pagination.next_num, q=q, category=category_id or '', course=course_id or '', semester=semester or '', availability=availability, sort=sort) }}">Next →</a></li>{% endif %}
+</ul></nav></div>
+{% endblock %}
