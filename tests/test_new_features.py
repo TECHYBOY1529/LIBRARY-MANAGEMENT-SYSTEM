@@ -1,9 +1,12 @@
+import csv
 import io
 import re
 from datetime import date, timedelta
 
+from sqlalchemy import event
+
 from library_app.extensions import db
-from library_app.models import AuditLog, Book, BugIncident, Loan, PasswordResetToken, SystemSetting, User
+from library_app.models import AuditLog, Book, BugIncident, Complaint, Loan, PasswordResetToken, SystemSetting, User
 
 from .conftest import login
 
@@ -175,6 +178,39 @@ def test_report_exports_csv_excel_pdf_and_role_permissions(client, records):
     login(client, "quality@test.edu", "QualityPassword!2026")
     assert client.get("/reports/export/members/xlsx", query_string=period).status_code == 403
     assert client.get("/reports/export/quality/pdf", query_string=period).status_code == 200
+
+
+def test_member_activity_export_uses_bounded_queries_for_many_members(client, records, app):
+    login(client, "admin@test.edu", "AdminPassword!2026")
+    with app.app_context():
+        db.session.add_all([
+            User(full_name=f"Extra Member {number:02}", email=f"extra{number}@test.edu",
+                 role="member", password_hash="unused")
+            for number in range(20)
+        ])
+        db.session.add(Loan(copy_id=records["copy_id"], member_id=records["member_id"],
+                            issued_by_id=records["admin_id"], due_date=date.today()))
+        db.session.add(Complaint(member_id=records["member_id"], category="other",
+                                 subject="Report count check", description="Count this request."))
+        db.session.commit()
+        engine = db.engine
+
+    statements = []
+
+    def record_statement(_connection, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record_statement)
+    try:
+        response = client.get("/reports/members.csv")
+    finally:
+        event.remove(engine, "before_cursor_execute", record_statement)
+
+    assert response.status_code == 200
+    assert len([statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]) <= 3
+    rows = list(csv.reader(io.StringIO(response.data.decode("utf-8-sig"))))
+    member_row = next(row for row in rows if row[0] == str(records["member_id"]))
+    assert member_row[4:] == ["1", "1"]
 
 
 def test_admin_pages_and_upload_permissions(client, records):

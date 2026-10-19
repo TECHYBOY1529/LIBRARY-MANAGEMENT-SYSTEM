@@ -76,9 +76,21 @@ def fines_csv():
 @bp.get("/members.csv")
 @roles_required("admin")
 def members_csv():
-    rows = User.query.filter_by(role="member").order_by(User.full_name).all()
+    loan_counts = (db.session.query(Loan.member_id.label("member_id"), func.count(Loan.id).label("loan_count"))
+                   .group_by(Loan.member_id).subquery())
+    open_complaint_counts = (db.session.query(Complaint.member_id.label("member_id"),
+                                               func.count(Complaint.id).label("complaint_count"))
+                             .filter(Complaint.status.in_(["open", "in_progress"]))
+                             .group_by(Complaint.member_id).subquery())
+    rows = (db.session.query(User,
+                             func.coalesce(loan_counts.c.loan_count, 0),
+                             func.coalesce(open_complaint_counts.c.complaint_count, 0))
+            .outerjoin(loan_counts, loan_counts.c.member_id == User.id)
+            .outerjoin(open_complaint_counts, open_complaint_counts.c.member_id == User.id)
+            .filter(User.role == "member").order_by(User.full_name).all())
     return csv_response("member-activity-report.csv", ["Member ID", "Name", "Email", "Active", "Loans", "Open complaints"],
-                        [[r.id, r.full_name, r.email, r.active, Loan.query.filter_by(member_id=r.id).count(), Complaint.query.filter_by(member_id=r.id).filter(Complaint.status.in_(["open", "in_progress"])).count()] for r in rows])
+                        [[member.id, member.full_name, member.email, member.active, loan_count, complaint_count]
+                         for member, loan_count, complaint_count in rows])
 
 
 @bp.get("/quality.csv")
