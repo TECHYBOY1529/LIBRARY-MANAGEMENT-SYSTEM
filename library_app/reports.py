@@ -10,6 +10,7 @@ from .extensions import db
 from .models import Book, BookCopy, Complaint, Feedback, Fine, Loan, User, utcnow
 from .security import roles_required
 from .services import kpi_summary, pareto_data, time_series_monthly
+from .time_utils import library_today
 
 bp = Blueprint("reports", __name__)
 
@@ -17,7 +18,7 @@ bp = Blueprint("reports", __name__)
 @bp.get("/")
 @roles_required("admin", "quality_manager")
 def index():
-    today = date.today()
+    today = library_today()
     start_date, end_date = _date_range(default_start=today - timedelta(days=89), default_end=today)
     return render_template("reports.html", start_date=start_date, end_date=end_date)
 
@@ -58,9 +59,10 @@ def loans_csv():
 @bp.get("/overdue.csv")
 @roles_required("admin")
 def overdue_csv():
-    rows = Loan.query.filter(Loan.status == "active", Loan.due_date < date.today()).order_by(Loan.due_date).all()
+    today = library_today()
+    rows = Loan.query.filter(Loan.status == "active", Loan.due_date < today).order_by(Loan.due_date).all()
     return csv_response("overdue-report.csv", ["Loan ID", "Member", "Email", "Title", "Due date", "Days overdue"],
-                        [[r.id, r.member.full_name, r.member.email, r.copy.book.title, r.due_date.isoformat(), (date.today() - r.due_date).days] for r in rows])
+                        [[r.id, r.member.full_name, r.member.email, r.copy.book.title, r.due_date.isoformat(), (today - r.due_date).days] for r in rows])
 
 
 @bp.get("/fines.csv")
@@ -168,12 +170,13 @@ def _report_dataset(kind, start, end):
                  loan.status, loan.issue_seconds if loan.issue_seconds is not None else ""] for loan in records]
         return "Borrowing and returns", ["Loan ID", "Member", "ISBN", "Title", "Issued", "Due", "Returned", "Status", "Issue operation ms"], rows
     if kind == "overdue":
+        today = library_today()
         records = (Loan.query.filter(Loan.status == "active", Loan.due_date >= start, Loan.due_date <= end,
-                                     Loan.due_date < date.today())
+                                     Loan.due_date < today)
                    .options(joinedload(Loan.member), joinedload(Loan.copy).joinedload(BookCopy.book))
                    .order_by(Loan.due_date).limit(25001).all())
         rows = [[loan.id, loan.member.full_name, loan.member.email, loan.copy.book.title, loan.due_date.isoformat(),
-                 (date.today() - loan.due_date).days] for loan in records]
+                 (today - loan.due_date).days] for loan in records]
         return "Overdue loans", ["Loan ID", "Member", "Email", "Title", "Due date", "Days overdue"], rows
     if kind == "fines":
         records = (Fine.query.join(Loan).filter(*_between(Fine.assessed_at, start, end))
@@ -227,7 +230,7 @@ def export_report(kind, file_format):
         abort(403)
     if file_format not in {"csv", "xlsx", "pdf"}:
         abort(404)
-    today = date.today()
+    today = library_today()
     start, end = _date_range(today - timedelta(days=89), today)
     title, headers, rows = _report_dataset(kind, start, end)
     if len(rows) > 25000:

@@ -5,6 +5,7 @@ from .extensions import db
 from .models import (Author, Book, BookCopy, Category, Course, Complaint, Feedback, Fine,
                      ImprovementAction, InventoryAudit, Loan, Notification, PdcaCycle, Publisher,
                      Reservation, RootCauseAnalysis, User, utcnow)
+from .time_utils import library_today
 
 DEMO_ADMIN_EMAIL = "admin@library.demo"
 DEMO_ADMIN_PASSWORD = "LibraryDemo!2026"
@@ -76,7 +77,7 @@ def seed_demo():
         copy = copies_by_book[book.id][0]
         issued = utcnow() - timedelta(days=(index * 5 + 2) % 80)
         if index < 8:
-            due = date.today() + timedelta(days=(index % 4) - 2)
+            due = library_today() + timedelta(days=(index % 4) - 2)
             copy.status = "loaned"
             db.session.add(Loan(copy_id=copy.id, member_id=member.id, issued_by_id=admin.id,
                                 issued_at=issued, due_date=due, status="active", issue_seconds=320 + index * 85))
@@ -129,13 +130,13 @@ def seed_demo():
     db.session.add_all([
         ImprovementAction(problem="Reduce the mid-day service queue", root_cause="Staffing does not follow demand peaks.",
                           corrective_action="Pilot a second service desk for the 12:00–14:00 peak and log wait samples weekly.", owner_id=admin.id,
-                          deadline=date.today() + timedelta(days=20), status="in_progress", created_by_id=quality.id),
+                          deadline=library_today() + timedelta(days=20), status="in_progress", created_by_id=quality.id),
         ImprovementAction(problem="Improve catalog search reliability", root_cause="Index refresh is manual and ownership is unclear.",
                           corrective_action="Assign a weekly index check and document the recovery procedure.", owner_id=quality.id,
-                          deadline=date.today() + timedelta(days=10), status="pending", created_by_id=quality.id),
+                          deadline=library_today() + timedelta(days=10), status="pending", created_by_id=quality.id),
         ImprovementAction(problem="Clarify book reservation status", root_cause="Members cannot see queue status.",
                           corrective_action="Send a notification when a reserved copy is ready and add status tracking.", owner_id=admin.id,
-                          deadline=date.today() - timedelta(days=5), status="completed", completed_at=utcnow() - timedelta(days=8), created_by_id=quality.id),
+                          deadline=library_today() - timedelta(days=5), status="completed", completed_at=utcnow() - timedelta(days=8), created_by_id=quality.id),
     ])
 
     db.session.add_all([

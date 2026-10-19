@@ -15,6 +15,7 @@ from .extensions import db
 from .models import Author, Book, BookCopy, CatalogImportBatch, Category, Course, Loan, Publisher, Reservation, User, utcnow
 from .security import roles_required
 from .services import audit, cancel_reservation, configured_value, issue_book, return_book
+from .time_utils import library_today
 
 bp = Blueprint("catalog", __name__)
 LOOKUPS = {"authors": Author, "categories": Category, "publishers": Publisher, "courses": Course}
@@ -88,7 +89,7 @@ def _validated_import_rows(rows):
         if not title or len(title) > 240: issues.append("title is required (maximum 240 characters)")
         try: year = int(data.get("publication_year", ""))
         except (TypeError, ValueError): year = 0
-        if year < 1450 or year > date.today().year + 1: issues.append("invalid publication year")
+        if year < 1450 or year > library_today().year + 1: issues.append("invalid publication year")
         try: copies = int(data.get("copies", ""))
         except (TypeError, ValueError): copies = 0
         if not 1 <= copies <= 500: issues.append("copies must be between 1 and 500")
@@ -205,7 +206,7 @@ def book_form_data():
         raise ValueError("Enter a valid ISBN (10 or 13 digits, hyphens allowed).")
     if not title or len(title) > 240:
         raise ValueError("Title is required and must be at most 240 characters.")
-    if not year or year < 1450 or year > date.today().year + 1:
+    if not year or year < 1450 or year > library_today().year + 1:
         raise ValueError("Enter a valid publication year.")
     if not all([db.session.get(Author, author_id), db.session.get(Category, category_id),
                 db.session.get(Publisher, publisher_id), db.session.get(Course, course_id)]):
@@ -406,7 +407,7 @@ def loans():
     books = Book.query.order_by(Book.title).all()
     ready_reservations = Reservation.query.filter_by(status="ready").order_by(Reservation.created_at).all()
     return render_template("loans.html", pagination=rows, members=members, books=books,
-                           ready_reservations=ready_reservations, today=date.today(),
+                           ready_reservations=ready_reservations, today=library_today(),
                            loan_days=configured_value("DEFAULT_LOAN_DAYS"), fine_rate=configured_value("FINE_PER_DAY"))
 
 

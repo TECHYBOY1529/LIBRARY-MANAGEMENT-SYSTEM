@@ -5,6 +5,7 @@ import math
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import click
 from dotenv import load_dotenv
@@ -58,9 +59,14 @@ def create_app(test_config=None):
         MAIL_USE_TLS=os.getenv("MAIL_USE_TLS", "true").lower() == "true",
         PASSWORD_RESET_TOKEN_MINUTES=int(os.getenv("PASSWORD_RESET_TOKEN_MINUTES", "30")),
         BACKUP_RETENTION_DAYS=int(os.getenv("BACKUP_RETENTION_DAYS", "30")),
+        LIBRARY_TIMEZONE=os.getenv("LIBRARY_TIMEZONE", "Asia/Kolkata").strip(),
     )
     if test_config:
         app.config.update(test_config)
+    try:
+        ZoneInfo(app.config["LIBRARY_TIMEZONE"])
+    except (ZoneInfoNotFoundError, TypeError, ValueError) as error:
+        raise ValueError("LIBRARY_TIMEZONE must be a valid IANA timezone, such as Asia/Kolkata.") from error
     if app.config["APP_ENV"] == "production":
         secret_key = app.config.get("SECRET_KEY")
         if not secret_key or len(secret_key) < 32 or secret_key.startswith("replace-"):

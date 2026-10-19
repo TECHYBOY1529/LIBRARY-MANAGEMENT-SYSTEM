@@ -137,6 +137,7 @@ APP_ENV=production
 FLASK_DEBUG=false
 SECRET_KEY=<a new random value of at least 32 characters>
 PUBLIC_BASE_URL=https://<your-public-domain>
+LIBRARY_TIMEZONE=Asia/Kolkata
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 SESSION_COOKIE_SECURE=true
 TRUST_PROXY=true
@@ -145,7 +146,7 @@ DEFAULT_LOAN_DAYS=14
 FINE_PER_DAY=1.00
 ```
 
-Adjust the Railway reference names to match your PostgreSQL and Redis service names and available connection variables. Set `PUBLIC_BASE_URL` to the deployed HTTPS origin, not the placeholder above. Railway supplies `PORT`; do not define it yourself. Production startup rejects an insecure session-cookie setting, an HTTP/local public URL, or in-memory rate limits. `TRUST_PROXY=true` is intended for a trusted Railway proxy. Redis gives rate limits shared storage across app restarts and instances; `memory://` is suitable only for a local/single-process demo. Configure SMTP to enable self-service password resets; otherwise administrators must assist users.
+Adjust the Railway reference names to match your PostgreSQL and Redis service names and available connection variables. Set `PUBLIC_BASE_URL` to the deployed HTTPS origin, not the placeholder above. Set `LIBRARY_TIMEZONE` to the timezone used for due dates and overdue reporting (Asia/Kolkata for Amrapali). Railway supplies `PORT`; do not define it yourself. Production startup rejects an insecure session-cookie setting, an HTTP/local public URL, or in-memory rate limits. `TRUST_PROXY=true` is intended for a trusted Railway proxy. Redis gives rate limits shared storage across app restarts and instances; `memory://` is suitable only for a local/single-process demo. Configure SMTP to enable self-service password resets; otherwise administrators must assist users.
 
 After attaching the PostgreSQL URL, run `python -m flask --app run.py db upgrade` against the deployed service before opening the public domain. Then run the `create-user` command from the service shell to create the initial staff login. Do not run `seed-demo` or `reset-demo` in production. If using SQLite instead, mount a persistent Railway volume at `/app/instance`, keep `DATABASE_URL=sqlite:///library.db`, use one application instance, and configure backups. SQLite is intended here for local and small demonstration deployments.
 

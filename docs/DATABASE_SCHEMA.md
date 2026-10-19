@@ -1,6 +1,6 @@
 # Database schema
 
-The application uses SQLite through Flask-SQLAlchemy. Foreign keys are enabled on SQLite connections. SQLAlchemy models provide primary keys, foreign keys, unique constraints, status/rating/amount checks, and indexes on lookup and reporting fields. Physical inventory is represented by one `book_copies` row per copy; availability is derived from the status of those rows.
+The application uses Flask-SQLAlchemy with SQLite for local and small deployments and PostgreSQL for hosted production. Foreign keys are enabled on SQLite connections. SQLAlchemy models provide primary keys, foreign keys, unique constraints, status/rating/amount checks, and indexes on lookup and reporting fields. Physical inventory is represented by one `book_copies` row per copy; availability is derived from the status of those rows.
 
 ## Entity relationships
 

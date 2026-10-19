@@ -11,6 +11,7 @@ from .extensions import db
 from .models import AuditLog, Book, BookCopy, BugIncident, Category, Complaint, Course, Feedback, ImprovementAction, Loan, Notification, Reservation, SystemSetting, User, utcnow
 from .security import roles_required
 from .services import kpi_summary, refresh_loan_notifications, time_series_monthly
+from .time_utils import library_today
 
 bp = Blueprint("main", __name__)
 
@@ -49,7 +50,7 @@ def dashboard():
         "available": BookCopy.query.filter_by(status="available").count(),
         "members": User.query.filter_by(role="member", active=True).count(),
         "active_loans": Loan.query.filter_by(status="active").count(),
-        "overdue": Loan.query.filter(Loan.status == "active", Loan.due_date < date.today()).count(),
+        "overdue": Loan.query.filter(Loan.status == "active", Loan.due_date < library_today()).count(),
         "complaints": Complaint.query.filter(Complaint.status.in_(["open", "in_progress"])).count(),
         "satisfaction": db.session.query(func.avg(Feedback.rating)).scalar(),
         "actions": ImprovementAction.query.filter(ImprovementAction.status != "completed").count(),
@@ -70,8 +71,9 @@ def dashboard():
     summary["reserved_copies"] = copy_status.get("reserved", 0)
     summary["maintenance_copies"] = copy_status.get("maintenance", 0)
     trend = time_series_monthly(Loan, Loan.issued_at, utcnow() - timedelta(days=180))
-    due_soon = (Loan.query.filter(Loan.status == "active", Loan.due_date >= date.today(),
-                                  Loan.due_date <= date.today() + timedelta(days=7))
+    today = library_today()
+    due_soon = (Loan.query.filter(Loan.status == "active", Loan.due_date >= today,
+                                  Loan.due_date <= today + timedelta(days=7))
                 .options(joinedload(Loan.copy).joinedload(BookCopy.book), joinedload(Loan.member))
                 .order_by(Loan.due_date.asc()).limit(5).all())
     return render_template("dashboard_staff.html", summary=summary, kpis=kpi_summary(),
@@ -112,7 +114,7 @@ def about_page():
 @bp.get("/calendar")
 @login_required
 def due_calendar():
-    today = date.today()
+    today = library_today()
     year = request.args.get("year", today.year, type=int)
     month = request.args.get("month", today.month, type=int)
     if not 2000 <= year <= 2100 or not 1 <= month <= 12:

@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from time import perf_counter
 
@@ -8,6 +8,7 @@ from sqlalchemy import func
 from .extensions import db
 from .models import (AuditLog, BookCopy, Complaint, Feedback, Fine, ImprovementAction,
                      InventoryAudit, Loan, Notification, PdcaCycle, Reservation, SystemSetting, User, utcnow)
+from .time_utils import library_today
 
 
 def configured_value(key):
@@ -60,7 +61,7 @@ def issue_book(member_id, book_id, staff_user, loan_days=14, reservation_id=None
             raise ValueError("No available copy remains for this book.")
         copy.status = "loaned"
         loan = Loan(copy_id=copy.id, member_id=member_id, issued_by_id=staff_user.id,
-                    due_date=date.today() + timedelta(days=loan_days), status="active")
+                    due_date=library_today() + timedelta(days=loan_days), status="active")
         db.session.add(loan)
         db.session.flush()
         loan.issue_seconds = max(0, round((perf_counter() - started) * 1000))
@@ -92,7 +93,7 @@ def return_book(loan_id, staff_user, fine_per_day=Decimal("1.00")):
         loan.returned_at = utcnow()
         loan.returned_to_id = staff_user.id
         loan.status = "returned"
-        days_late = max(0, (date.today() - loan.due_date).days)
+        days_late = max(0, (library_today() - loan.due_date).days)
         amount = (Decimal(days_late) * fine_per_day).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if amount > 0:
             db.session.add(Fine(loan_id=loan.id, amount=amount))
@@ -120,7 +121,7 @@ def refresh_loan_notifications(member_id=None):
     query = Loan.query.filter_by(status="active")
     if member_id is not None:
         query = query.filter_by(member_id=member_id)
-    today = date.today()
+    today = library_today()
     for loan in query.all():
         if loan.due_date < today:
             notify(loan.member_id, "Book overdue", f"{loan.copy.book.title} was due {loan.due_date.isoformat()}. Please return it or contact the library.", "overdue", f"loan:{loan.id}:overdue")
@@ -183,7 +184,7 @@ def kpi_summary(days=90, start_date=None, end_date=None):
         "avg_issue_processing_ms": round(sum(l.issue_seconds for l in loans if l.issue_seconds is not None) / len([l for l in loans if l.issue_seconds is not None]), 1) if any(l.issue_seconds is not None for l in loans) else None,
         "avg_complaint_resolution_days": round(sum((c.resolved_at - c.created_at).total_seconds() / 86400 for c in resolved) / len(resolved), 1) if resolved else None,
         "complaint_resolution_rate_pct": round(100 * closed_count / total_complaints, 1) if total_complaints else None,
-        "overdue_loan_rate_pct": round(100 * sum(l.due_date < date.today() for l in active_loans) / len(active_loans), 1) if active_loans else None,
+        "overdue_loan_rate_pct": round(100 * sum(l.due_date < library_today() for l in active_loans) / len(active_loans), 1) if active_loans else None,
         "inventory_accuracy_pct": round(100 * count_matching / count_total, 1) if count_total else None,
         "actions_on_time_pct": round(100 * sum(a.completed_at.date() <= a.deadline for a in actions) / len(actions), 1) if actions else None,
         "borrowing_count": len(loans),

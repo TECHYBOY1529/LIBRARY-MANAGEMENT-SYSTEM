@@ -55,6 +55,12 @@ def test_production_rejects_unsafe_runtime_configuration(setting, value, message
         create_app(config)
 
 
+@pytest.mark.parametrize("timezone_name", ["Mars/Base", ""])
+def test_app_rejects_unknown_library_timezone(timezone_name):
+    with pytest.raises(ValueError, match="valid IANA timezone"):
+        create_app({"TESTING": True, "LIBRARY_TIMEZONE": timezone_name})
+
+
 def test_railway_postgres_url_uses_psycopg_without_sqlite_options(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgres://library:example@db.example.test/library")
     app = create_app({
@@ -65,3 +71,11 @@ def test_railway_postgres_url_uses_psycopg_without_sqlite_options(monkeypatch):
     assert app.config["SQLALCHEMY_ENGINE_OPTIONS"] == {"pool_pre_ping": True}
     with app.app_context():
         assert db.engine.url.drivername == "postgresql+psycopg"
+
+
+def test_library_calendar_uses_configured_timezone_for_due_dates(app):
+    from datetime import datetime, timezone
+    from library_app.time_utils import library_today
+
+    with app.app_context():
+        assert library_today(datetime(2026, 10, 19, 20, 0, tzinfo=timezone.utc)).isoformat() == "2026-10-20"
