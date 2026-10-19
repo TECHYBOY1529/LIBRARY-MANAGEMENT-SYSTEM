@@ -6,7 +6,7 @@ All data in this local walkthrough is fictional seed data. Do not treat it as a 
 
 1. Install dependencies and copy `.env.example` to `.env` (see the README).
 2. Initialize and seed: `python -m flask --app run.py reset-demo`.
-3. Start: `python run.py`; open `http://127.0.0.1:5000`.
+3. Stop any older running copy with `Ctrl+C`, then start the current checkout with `python -m flask --app run.py run --port 5002`; open `http://127.0.0.1:5002`.
 4. Use the demo accounts below. Change demo passwords with the hidden-prompt CLI before sharing a local machine.
 
 ## Example workflows

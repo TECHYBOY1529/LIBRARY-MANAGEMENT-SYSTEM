@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from flask import session
 from flask_login import UserMixin
@@ -6,6 +6,7 @@ from sqlalchemy import CheckConstraint, Index, UniqueConstraint
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .extensions import db, login_manager
+from .time_utils import library_today
 
 
 def utcnow():
@@ -101,7 +102,7 @@ class BookCopy(db.Model):
     book_id = db.Column(db.Integer, db.ForeignKey("books.id", ondelete="CASCADE"), nullable=False, index=True)
     barcode = db.Column(db.String(50), unique=True, nullable=False, index=True)
     status = db.Column(db.String(20), nullable=False, default="available", index=True)
-    acquired_at = db.Column(db.Date, nullable=False, default=date.today)
+    acquired_at = db.Column(db.Date, nullable=False, default=library_today)
     book = db.relationship(Book, back_populates="copies")
     __table_args__ = (CheckConstraint("status IN ('available', 'loaned', 'reserved', 'maintenance', 'lost')", name="ck_copy_status"),
                       Index("ix_bookcopy_book_status", "book_id", "status"))

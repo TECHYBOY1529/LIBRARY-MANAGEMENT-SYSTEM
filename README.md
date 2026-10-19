@@ -115,11 +115,13 @@ The six locally stored book and library photographs are used as editorial discov
 
 ## Run locally
 
+Stop any older server copy with `Ctrl+C` before restarting so it loads the latest project files. To use port 5002 explicitly:
+
 ```powershell
-python run.py
+python -m flask --app run.py run --port 5002
 ```
 
-Open [http://127.0.0.1:5000](http://127.0.0.1:5000). Registering through the public form always creates a Member/Student account; staff accounts are local demo seeds or accounts provisioned by an administrator.
+Open [http://127.0.0.1:5002](http://127.0.0.1:5002) (or the same port you selected in the command). Registering through the public form always creates a Member/Student account; staff accounts are local demo seeds or accounts provisioned by an administrator.
 
 ## Railway deployment
 
