@@ -14,6 +14,20 @@ bp = Blueprint("catalog", __name__)
 LOOKUPS = {"authors": Author, "categories": Category, "publishers": Publisher}
 
 
+def is_valid_isbn(value):
+    """Return whether an ISBN-10 or ISBN-13 has a valid check digit."""
+    normalized = re.sub(r"[-\s]", "", value).upper()
+    if re.fullmatch(r"\d{9}[\dX]", normalized):
+        checksum = sum((10 - index) * (10 if digit == "X" else int(digit))
+                       for index, digit in enumerate(normalized))
+        return checksum % 11 == 0
+    if re.fullmatch(r"\d{13}", normalized):
+        checksum = sum(int(digit) * (1 if index % 2 == 0 else 3)
+                       for index, digit in enumerate(normalized[:12]))
+        return (10 - checksum % 10) % 10 == int(normalized[-1])
+    return False
+
+
 @bp.get("/books")
 @login_required
 def books():
@@ -38,7 +52,7 @@ def book_form_data():
     author_id = request.form.get("author_id", type=int)
     category_id = request.form.get("category_id", type=int)
     publisher_id = request.form.get("publisher_id", type=int)
-    if not re.fullmatch(r"(?:\d{10}|\d{13}|[0-9Xx-]{10,20})", isbn):
+    if not is_valid_isbn(isbn):
         raise ValueError("Enter a valid ISBN (10 or 13 digits, hyphens allowed).")
     if not title or len(title) > 240:
         raise ValueError("Title is required and must be at most 240 characters.")
