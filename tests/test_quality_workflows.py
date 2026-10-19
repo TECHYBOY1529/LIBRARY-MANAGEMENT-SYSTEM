@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 
+from sqlalchemy import event
+
 from library_app.extensions import db
 from library_app.models import Complaint, Feedback, ImprovementAction, Loan, Reservation, User
 from library_app.services import kpi_summary, pareto_data
@@ -122,6 +124,35 @@ def test_kpis_are_calculated_and_missing_samples_stay_empty(app, records):
         assert summary["complaint_resolution_rate_pct"] == 50.0
         assert summary["avg_complaint_resolution_days"] == 1.0
         assert summary["data_sources"]["overdue_loan_rate_pct"]
+
+
+def test_kpi_summary_uses_database_aggregates_instead_of_loading_history(app, records):
+    with app.app_context():
+        db.session.add_all([
+            Feedback(member_id=records["member_id"], category="other", rating=index % 5 + 1,
+                     comments="Aggregate sample")
+            for index in range(40)
+        ])
+        db.session.commit()
+        engine = db.engine
+
+    statements = []
+
+    def record_statement(_connection, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record_statement)
+    try:
+        with app.app_context():
+            summary = kpi_summary()
+    finally:
+        event.remove(engine, "before_cursor_execute", record_statement)
+
+    selects = [statement.upper() for statement in statements if statement.lstrip().upper().startswith("SELECT")]
+    assert summary["satisfaction"] == 3.0
+    assert len(selects) <= 8
+    assert any("AVG(" in statement for statement in selects)
+    assert any("SUM(" in statement for statement in selects)
 
 
 def test_pareto_uses_actual_categories(app, records):

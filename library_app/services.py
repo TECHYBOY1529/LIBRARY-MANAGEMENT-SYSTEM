@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from time import perf_counter
 
 from flask import current_app
-from sqlalchemy import func
+from sqlalchemy import Date, case, cast, func
 
 from .extensions import db
 from .models import (AuditLog, BookCopy, Complaint, Feedback, Fine, ImprovementAction,
@@ -166,29 +166,57 @@ def kpi_summary(days=90, start_date=None, end_date=None):
         until = None
     def in_window(field):
         return [field >= since, field < until] if until else [field >= since]
-    feedback = Feedback.query.filter(*in_window(Feedback.created_at)).all()
-    loans = Loan.query.filter(*in_window(Loan.issued_at)).all()
-    active_loans = Loan.query.filter_by(status="active").all()
-    requests = Reservation.query.filter(*in_window(Reservation.created_at)).all()
-    resolved = Complaint.query.filter(Complaint.status.in_(["resolved", "closed"]), Complaint.resolved_at.isnot(None), *in_window(Complaint.created_at)).all()
-    total_complaints = Complaint.query.filter(*in_window(Complaint.created_at)).count()
-    closed_count = len(resolved)
-    actions = ImprovementAction.query.filter(ImprovementAction.status == "completed", *in_window(ImprovementAction.completed_at)).all()
-    audit_records = InventoryAudit.query.filter(*in_window(InventoryAudit.created_at)).all()
-    count_total = sum(a.checked_copies for a in audit_records)
-    count_matching = sum(a.matching_copies for a in audit_records)
+    feedback_count, feedback_average = db.session.query(
+        func.count(Feedback.id), func.avg(Feedback.rating)
+    ).filter(*in_window(Feedback.created_at)).one()
+    request_count, available_requests = db.session.query(
+        func.count(Reservation.id),
+        func.coalesce(func.sum(case((Reservation.available_at_request.is_(True), 1), else_=0)), 0),
+    ).filter(*in_window(Reservation.created_at)).one()
+    issue_count, issue_average = db.session.query(
+        func.count(Loan.issue_seconds), func.avg(Loan.issue_seconds)
+    ).filter(*in_window(Loan.issued_at), Loan.issue_seconds.isnot(None)).one()
+
+    resolution_days = (func.julianday(Complaint.resolved_at) - func.julianday(Complaint.created_at)
+                       if db.engine.dialect.name == "sqlite"
+                       else func.extract("epoch", Complaint.resolved_at - Complaint.created_at) / 86400.0)
+    total_complaints, resolved_count, average_resolution_days = db.session.query(
+        func.count(Complaint.id),
+        func.coalesce(func.sum(case((Complaint.status.in_(["resolved", "closed"])
+                                     & Complaint.resolved_at.isnot(None), 1), else_=0)), 0),
+        func.avg(resolution_days),
+    ).filter(*in_window(Complaint.created_at)).one()
+
+    today = library_today()
+    active_loan_count, overdue_loan_count = db.session.query(
+        func.count(Loan.id),
+        func.coalesce(func.sum(case((Loan.due_date < today, 1), else_=0)), 0),
+    ).filter_by(status="active").one()
+    count_total, count_matching = db.session.query(
+        func.coalesce(func.sum(InventoryAudit.checked_copies), 0),
+        func.coalesce(func.sum(InventoryAudit.matching_copies), 0),
+    ).filter(*in_window(InventoryAudit.created_at)).one()
+
+    completed_on = (func.date(ImprovementAction.completed_at)
+                    if db.engine.dialect.name == "sqlite"
+                    else cast(ImprovementAction.completed_at, Date))
+    action_count, on_time_count = db.session.query(
+        func.count(ImprovementAction.id),
+        func.coalesce(func.sum(case((completed_on <= ImprovementAction.deadline, 1), else_=0)), 0),
+    ).filter(ImprovementAction.status == "completed", ImprovementAction.completed_at.isnot(None),
+             *in_window(ImprovementAction.completed_at)).one()
     return {
         "period_days": days,
-        "satisfaction": round(sum(f.rating for f in feedback) / len(feedback), 2) if feedback else None,
-        "availability_when_requested_pct": round(100 * sum(r.available_at_request for r in requests) / len(requests), 1) if requests else None,
-        "avg_issue_processing_ms": round(sum(l.issue_seconds for l in loans if l.issue_seconds is not None) / len([l for l in loans if l.issue_seconds is not None]), 1) if any(l.issue_seconds is not None for l in loans) else None,
-        "avg_complaint_resolution_days": round(sum((c.resolved_at - c.created_at).total_seconds() / 86400 for c in resolved) / len(resolved), 1) if resolved else None,
-        "complaint_resolution_rate_pct": round(100 * closed_count / total_complaints, 1) if total_complaints else None,
-        "overdue_loan_rate_pct": round(100 * sum(l.due_date < library_today() for l in active_loans) / len(active_loans), 1) if active_loans else None,
+        "satisfaction": round(float(feedback_average), 2) if feedback_count else None,
+        "availability_when_requested_pct": round(100 * available_requests / request_count, 1) if request_count else None,
+        "avg_issue_processing_ms": round(float(issue_average), 1) if issue_count else None,
+        "avg_complaint_resolution_days": round(float(average_resolution_days), 1) if resolved_count else None,
+        "complaint_resolution_rate_pct": round(100 * resolved_count / total_complaints, 1) if total_complaints else None,
+        "overdue_loan_rate_pct": round(100 * overdue_loan_count / active_loan_count, 1) if active_loan_count else None,
         "inventory_accuracy_pct": round(100 * count_matching / count_total, 1) if count_total else None,
-        "actions_on_time_pct": round(100 * sum(a.completed_at.date() <= a.deadline for a in actions) / len(actions), 1) if actions else None,
-        "borrowing_count": len(loans),
-        "active_loans_count": len(active_loans),
+        "actions_on_time_pct": round(100 * on_time_count / action_count, 1) if action_count else None,
+        "borrowing_count": Loan.query.filter(*in_window(Loan.issued_at)).count(),
+        "active_loans_count": active_loan_count,
         "data_sources": {
             "satisfaction": "Feedback ratings submitted in the trailing period; arithmetic mean, 1–5.",
             "availability_when_requested_pct": "Reservations created in the period; available copies at submission / all reservation requests. Proxy for availability on request.",
