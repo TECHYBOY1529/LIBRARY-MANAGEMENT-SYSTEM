@@ -293,7 +293,7 @@ def inventory_audit():
 @roles_required("admin", "quality_manager")
 def dashboard():
     since = utcnow() - timedelta(days=90)
-    satisfaction = time_series_monthly(Feedback, Feedback.created_at, since, lambda row: row.rating)
+    satisfaction = time_series_monthly(Feedback, Feedback.created_at, since, value_field=Feedback.rating)
     borrowing = time_series_monthly(Loan, Loan.issued_at, since)
     complaint_counts = dict(db.session.query(Complaint.category, func.count(Complaint.id)).filter(Complaint.created_at >= since).group_by(Complaint.category).all())
     pareto = pareto_data(90)

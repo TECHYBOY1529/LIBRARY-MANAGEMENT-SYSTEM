@@ -248,18 +248,19 @@ def kpi_summary(days=90, start_date=None, end_date=None):
     }
 
 
-def time_series_monthly(model, field, since, value_fn=None, until=None):
-    query = model.query.filter(field >= since)
+def time_series_monthly(model, field, since, value_field=None, until=None):
+    """Aggregate monthly counts/averages in SQL instead of loading every matching row."""
+    month_bucket = (func.strftime("%Y-%m", field) if db.engine.dialect.name == "sqlite"
+                    else func.to_char(field, "YYYY-MM"))
+    aggregate = func.avg(value_field) if value_field is not None else func.count(model.id)
+    query = db.session.query(month_bucket.label("month"), aggregate.label("value")).filter(field >= since)
     if until:
         query = query.filter(field < until)
-    records = query.all()
-    buckets = {}
-    for record in records:
-        dt = getattr(record, field.key)
-        label = dt.strftime("%Y-%m")
-        buckets.setdefault(label, []).append(value_fn(record) if value_fn else 1)
-    labels = sorted(buckets)
-    return {"labels": labels, "values": [round(sum(buckets[label]) / len(buckets[label]), 2) if value_fn else len(buckets[label]) for label in labels]}
+    rows = query.group_by(month_bucket).order_by(month_bucket).all()
+    return {
+        "labels": [row.month for row in rows],
+        "values": [round(float(row.value), 2) if value_field is not None else row.value for row in rows],
+    }
 
 
 def pareto_data(days=90, start_date=None, end_date=None):

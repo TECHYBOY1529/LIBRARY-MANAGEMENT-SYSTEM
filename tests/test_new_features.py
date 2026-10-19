@@ -1,13 +1,13 @@
 import csv
 import io
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import event
 
 from library_app.extensions import db
-from library_app.models import AuditLog, Book, BookCopy, BugIncident, Complaint, Loan, Notification, PasswordResetToken, SystemSetting, User
-from library_app.services import refresh_loan_notifications
+from library_app.models import AuditLog, Book, BookCopy, BugIncident, Complaint, Feedback, Loan, Notification, PasswordResetToken, SystemSetting, User, utcnow
+from library_app.services import refresh_loan_notifications, time_series_monthly
 from library_app.time_utils import library_today
 
 from .conftest import login
@@ -249,6 +249,53 @@ def test_due_loan_notifications_use_bounded_queries_and_are_idempotent(app, reco
         reminders = Notification.query.filter_by(user_id=records["member_id"], kind="due").all()
         assert len(reminders) == 5
         assert len({reminder.reference_key for reminder in reminders}) == 5
+
+
+def test_monthly_charts_aggregate_in_database_with_expected_counts_and_averages(app, records):
+    with app.app_context():
+        current_month = utcnow().replace(day=15, hour=12, minute=0, second=0, microsecond=0)
+        previous_month = current_month - timedelta(days=25)
+        since = current_month - timedelta(days=60)
+        db.session.add_all([
+            Feedback(member_id=records["member_id"], category="other", rating=5, comments="Previous month",
+                     created_at=previous_month),
+            Feedback(member_id=records["member_id"], category="other", rating=2, comments="Current month one",
+                     created_at=current_month),
+            Feedback(member_id=records["member_id"], category="other", rating=4, comments="Current month two",
+                     created_at=current_month + timedelta(days=1)),
+            Loan(copy_id=records["copy_id"], member_id=records["member_id"], issued_by_id=records["admin_id"],
+                 due_date=library_today(), issued_at=previous_month, status="returned"),
+            Loan(copy_id=records["copy_id"], member_id=records["member_id"], issued_by_id=records["admin_id"],
+                 due_date=library_today(), issued_at=current_month, status="returned"),
+            Loan(copy_id=records["copy_id"], member_id=records["member_id"], issued_by_id=records["admin_id"],
+                 due_date=library_today(), issued_at=current_month + timedelta(days=1), status="returned"),
+        ])
+        db.session.commit()
+        engine = db.engine
+
+    statements = []
+
+    def record_statement(_connection, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record_statement)
+    try:
+        with app.app_context():
+            satisfaction = time_series_monthly(Feedback, Feedback.created_at, since,
+                                               value_field=Feedback.rating,
+                                               until=current_month + timedelta(days=10))
+            borrowing = time_series_monthly(Loan, Loan.issued_at, since,
+                                            until=current_month + timedelta(days=10))
+    finally:
+        event.remove(engine, "before_cursor_execute", record_statement)
+
+    month_labels = [previous_month.strftime("%Y-%m"), current_month.strftime("%Y-%m")]
+    assert satisfaction == {"labels": month_labels, "values": [5.0, 3.0]}
+    assert borrowing == {"labels": month_labels, "values": [1, 2]}
+    selects = [statement.upper() for statement in statements if statement.lstrip().upper().startswith("SELECT")]
+    assert len(selects) == 2
+    assert all("GROUP BY" in statement for statement in selects)
+    assert any("AVG(" in statement for statement in selects)
 
 
 def test_admin_pages_and_upload_permissions(client, records):
