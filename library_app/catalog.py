@@ -379,8 +379,11 @@ def member_update(user_id):
     elif User.query.filter(User.email == email, User.id != user.id).first():
         flash("That email is already in use.", "danger")
     else:
+        active = request.form.get("active") == "on"
+        if user.active != active:
+            user.auth_version += 1
         user.full_name, user.email = name, email
-        user.active = request.form.get("active") == "on"
+        user.active = active
         audit(current_user, "update_member", "user", user.id)
         db.session.commit()
         flash("Member record updated.", "success")

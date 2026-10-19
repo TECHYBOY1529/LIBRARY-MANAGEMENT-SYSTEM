@@ -1,3 +1,5 @@
+from flask import g
+
 from library_app.extensions import db
 from library_app.models import User
 
@@ -63,7 +65,9 @@ def test_password_change_invalidates_other_signed_in_sessions(app, records):
     first_client = app.test_client()
     second_client = app.test_client()
     login(first_client, "member@test.edu", "MemberPassword!2026")
+    g.pop("_login_user", None)
     login(second_client, "member@test.edu", "MemberPassword!2026")
+    g.pop("_login_user", None)
 
     response = first_client.post("/account", data={
         "form_action": "password",
@@ -72,7 +76,34 @@ def test_password_change_invalidates_other_signed_in_sessions(app, records):
         "confirm_password": "UpdatedPassword!2026",
     }, follow_redirects=True)
     assert b"Your password has been changed. Sign in again." in response.data
+    g.pop("_login_user", None)
     assert b"Good to see you." in second_client.get("/account", follow_redirects=True).data
+
+
+def test_member_suspension_revokes_sessions_even_after_reactivation(app, records):
+    admin_client = app.test_client()
+    member_client = app.test_client()
+    login(admin_client, "admin@test.edu", "AdminPassword!2026")
+    g.pop("_login_user", None)
+    member_login = login(member_client, "member@test.edu", "MemberPassword!2026")
+    assert b"MEMBER WORKSPACE" in member_login.data
+    g.pop("_login_user", None)
+    with member_client.session_transaction() as member_session:
+        assert member_session.get("_auth_version") == 0
+
+    path = f"/library/members/{records['member_id']}/update"
+    profile = {"full_name": "Test Member", "email": "member@test.edu"}
+    suspended = admin_client.post(path, data=profile, follow_redirects=True)
+    assert b"Member record updated" in suspended.data
+    reactivated = admin_client.post(path, data={**profile, "active": "on"}, follow_redirects=True)
+    assert b"Member record updated" in reactivated.data
+
+    with app.app_context():
+        member = db.session.get(User, records["member_id"])
+        assert member.active is True and member.auth_version == 2
+    g.pop("_login_user", None)
+    response = member_client.get("/account", follow_redirects=True)
+    assert b"Good to see you." in response.data
 
 
 def test_login_is_rate_limited(client):
