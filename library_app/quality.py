@@ -278,8 +278,9 @@ def inventory_audit():
             db.session.commit()
             flash("Inventory audit recorded.", "success")
             return redirect(url_for("quality.inventory_audit"))
-    rows = InventoryAudit.query.order_by(InventoryAudit.created_at.desc()).all()
-    return render_template("inventory_audit.html", audits=rows)
+    rows = InventoryAudit.query.order_by(InventoryAudit.created_at.desc()).paginate(
+        page=request.args.get("page", 1, type=int), per_page=20, error_out=False)
+    return render_template("inventory_audit.html", pagination=rows, audits=rows.items)
 
 
 @bp.get("/")
