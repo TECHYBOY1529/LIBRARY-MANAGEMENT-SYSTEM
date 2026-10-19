@@ -6,8 +6,10 @@ All data in this local walkthrough is fictional seed data. Do not treat it as a 
 
 1. Install dependencies and copy `.env.example` to `.env` (see the README).
 2. Initialize and seed: `python -m flask --app run.py reset-demo`.
-3. Stop any older running copy with `Ctrl+C`, then start the current checkout with `python -m flask --app run.py run --port 5002`; open `http://127.0.0.1:5002`.
+3. Start the current checkout with `python -m flask --app run.py run --host 127.0.0.1 --port 5002`; open `http://127.0.0.1:5002`. If another server is already using that port, leave it running and choose a free port, then open that port instead.
 4. Use the demo accounts below. Change demo passwords with the hidden-prompt CLI before sharing a local machine.
+
+At `/login`, choose **Student** for member accounts or **Library management** for Admin/Librarian and Quality Manager accounts. The server checks the selected account type before signing in and directs each role to its own dashboard.
 
 ## Example workflows
 
@@ -38,4 +40,4 @@ All data in this local walkthrough is fictional seed data. Do not treat it as a 
 
 ## Screenshots
 
-No screenshot images were captured in this workspace run because desktop browser capture could not verify the active browser URL. To add screenshots, run the app, sign in with local demo accounts, and save fictional-data views for the Admin dashboard, TQM dashboard, and Member dashboard in a `screenshots/` directory beside this guide. Do not capture real member data.
+No screenshot files are checked into this repository. For a report, capture only fictional demo-data views for the Admin dashboard, TQM dashboard, and Member dashboard. Do not capture real member data.

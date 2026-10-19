@@ -782,6 +782,16 @@ h1 { font-weight:600; }
   .login-choice-card { padding:29px 22px 25px; }
   .login-role-card { padding:15px; }
 }
+@media (max-width:900px) {
+  .auth-shell { grid-template-columns:1fr; }
+  .auth-art { min-height:330px; padding:24px 26px; }
+  .auth-art-copy { margin:auto 0 15px; padding:24px 0 15px; }
+  .auth-art-copy h1 { margin:9px 0; font-size:48px; }
+  .auth-art-copy p { max-width:440px; font-size:12px; }
+  .auth-art-snapshot { display:none; }
+  .auth-art-caption { margin-top:3px; font-size:9px; }
+  .auth-main { padding:25px 17px 19px; }
+}
 @media (prefers-reduced-motion:reduce) {
   .dashboard-hero-note { animation:none!important; transform:none; }
   .book-pin,.book-pin-photo img,.pin-photo-action,.dashboard-hero-primary { transition:none!important; }

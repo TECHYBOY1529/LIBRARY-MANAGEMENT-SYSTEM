@@ -20,6 +20,14 @@ from .extensions import db, limiter, login_manager, migrate
 csrf = CSRFProtect()
 
 
+def _static_asset_version(static_folder, filename):
+    """Return a per-file cache key so a running app serves the latest assets."""
+    try:
+        return format((Path(static_folder) / filename).stat().st_mtime_ns, "x")
+    except OSError:
+        return "0"
+
+
 def create_app(test_config=None):
     load_dotenv()
     app = Flask(__name__, instance_relative_config=True)
@@ -160,6 +168,7 @@ def create_app(test_config=None):
             "now_utc": datetime.now(timezone.utc),
             "current_user": current_user,
             "unread_notification_count": unread_count,
+            "asset_version": lambda filename: _static_asset_version(app.static_folder, filename),
         }
 
     app.jinja_env.filters["from_json"] = json.loads

@@ -1,5 +1,6 @@
 import csv
 import io
+import os
 import re
 from datetime import date, datetime, timedelta
 
@@ -13,7 +14,7 @@ from library_app.time_utils import library_today
 from .conftest import login
 
 
-def test_personal_ui_calendar_help_and_about_render(client, records):
+def test_personal_ui_calendar_help_and_about_render(client, records, app):
     login(client, "member@test.edu", "MemberPassword!2026")
     for path, phrase in [("/calendar", b"Due-date calendar"), ("/help", b"frequently asked questions"), ("/about", b"Campus Library")]:
         response = client.get(path)
@@ -23,6 +24,10 @@ def test_personal_ui_calendar_help_and_about_render(client, records):
     assert b"Display preferences" in shell.data
     assert b"Search books, authors, ISBN" in shell.data
     assert b"High contrast" in shell.data
+    css_version = format(os.stat(os.path.join(app.static_folder, "css", "app.css")).st_mtime_ns, "x")
+    js_version = format(os.stat(os.path.join(app.static_folder, "js", "app.js")).st_mtime_ns, "x")
+    assert f"/static/css/app.css?v={css_version}".encode() in shell.data
+    assert f"/static/js/app.js?v={js_version}".encode() in shell.data
 
 
 def test_catalog_matches_card_based_stitch_layout_with_real_inventory(client, records):
@@ -139,6 +144,29 @@ def test_catalog_csv_import_requires_validated_preview(client, records, app):
     }, content_type="multipart/form-data")
     assert b"Import paused" in response.data
     assert b"duplicate ISBN" in response.data
+
+
+def test_catalog_import_caps_total_copies_before_any_books_are_added(client, records, app):
+    login(client, "admin@test.edu", "AdminPassword!2026")
+
+    def isbn13(sequence):
+        body = f"978{sequence:09d}"
+        check_digit = (10 - sum(int(digit) * (1 if index % 2 == 0 else 3)
+                                for index, digit in enumerate(body)) % 10) % 10
+        return body + str(check_digit)
+
+    rows = [f"{isbn13(number)},Bulk title {number},Test Author,Test Category,Test Publisher,2024,500"
+            for number in range(21)]
+    csv_text = "isbn,title,author,category,publisher,publication_year,copies\n" + "\n".join(rows) + "\n"
+    response = client.post("/library/books/import", data={
+        "action": "upload", "file": (io.BytesIO(csv_text.encode()), "large-copy-batch.csv"),
+    }, content_type="multipart/form-data")
+
+    assert response.status_code == 200
+    assert b"Import paused" in response.data
+    assert b"10,000 copies in total" in response.data
+    with app.app_context():
+        assert Book.query.count() == 1
 
 
 def test_incident_register_validates_status_and_is_role_limited(client, records, app):

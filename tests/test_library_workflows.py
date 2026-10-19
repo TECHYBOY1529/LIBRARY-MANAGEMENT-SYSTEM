@@ -76,6 +76,22 @@ def test_duplicate_and_unavailable_issue_rejected(client, records, app):
         assert BookCopy.query.one().status == "loaned"
 
 
+def test_active_title_cannot_be_issued_twice_when_another_copy_is_available(app, records):
+    with app.app_context():
+        admin = db.session.get(User, records["admin_id"])
+        extra_copy = BookCopy(book_id=records["book_id"], barcode="TEST-SECOND-COPY")
+        db.session.add(extra_copy)
+        db.session.commit()
+
+        services.issue_book(records["member_id"], records["book_id"], admin)
+        with pytest.raises(ValueError, match="already has an active loan"):
+            services.issue_book(records["member_id"], records["book_id"], admin)
+
+        db.session.expire_all()
+        assert Loan.query.filter_by(member_id=records["member_id"], status="active").count() == 1
+        assert BookCopy.query.filter_by(barcode="TEST-SECOND-COPY", status="available").count() == 1
+
+
 def test_return_rejects_invalid_second_return(app, records):
     with app.app_context():
         admin = db.session.get(User, records["admin_id"])

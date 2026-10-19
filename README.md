@@ -6,7 +6,7 @@ A modular library management web application for a college or university academi
 
 ## Features
 
-- **Three roles:** Admin/Librarian, Member/Student, and Quality Manager, with backend route authorization and role-specific navigation.
+- **Three roles:** Admin/Librarian, Member/Student, and Quality Manager, with separate Student and Library Management sign-in routes, backend account-type checks, role-specific dashboards, and role-based navigation.
 - **Catalog and inventory:** manage books, authors, subjects, courses, semesters, publishers, ISBNs, years, and individually barcoded copies. Search by title, author, ISBN, subject, course, publisher, semester, and availability; sort and paginate results; validate and preview CSV imports before commit.
 - **Institution profile data:** the `institutional_library_facts` table stores public, source-attributed Amrapali library facts separately from local books and copy records. It deliberately contains aggregate library information, not student rosters. Current webpage and 2025–26 prospectus counts are kept separately because the published totals differ; verify with the library before operational planning.
 - **Circulation:** issue/return procedures, due dates, overdue tracking, configurable fines, reservations and FIFO waitlists, member history, and in-app notifications.

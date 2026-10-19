@@ -40,8 +40,11 @@ def issue_book(member_id, book_id, staff_user, loan_days=14, reservation_id=None
     try:
         if not isinstance(loan_days, int) or not 1 <= loan_days <= 365:
             raise ValueError("Loan period must be between 1 and 365 days.")
-        member = db.session.get(User, member_id)
-        if not member or member.role != "member" or not member.active:
+        # Serialize issues for one member so concurrent staff cannot create
+        # duplicate active loans for the same title on different copies.
+        member = (User.query.filter_by(id=member_id, role="member", active=True)
+                  .with_for_update().populate_existing().first())
+        if not member:
             raise ValueError("Select an active library member.")
         active_same_title = db.session.query(Loan.id).join(BookCopy).filter(
             Loan.member_id == member_id, Loan.status == "active", BookCopy.book_id == book_id

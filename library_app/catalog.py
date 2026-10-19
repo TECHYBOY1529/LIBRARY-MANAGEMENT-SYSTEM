@@ -19,6 +19,7 @@ from .time_utils import library_today
 
 bp = Blueprint("catalog", __name__)
 LOOKUPS = {"authors": Author, "categories": Category, "publishers": Publisher, "courses": Course}
+MAX_IMPORT_TOTAL_COPIES = 10_000
 
 
 def is_valid_isbn(value):
@@ -75,6 +76,7 @@ def books():
 
 def _validated_import_rows(rows):
     valid, errors, seen = [], [], set()
+    accepted_copy_count = 0
     known_authors = {item.name.casefold(): item.id for item in Author.query.all()}
     known_categories = {item.name.casefold(): item.id for item in Category.query.all()}
     known_publishers = {item.name.casefold(): item.id for item in Publisher.query.all()}
@@ -93,6 +95,8 @@ def _validated_import_rows(rows):
         try: copies = int(data.get("copies", ""))
         except (TypeError, ValueError): copies = 0
         if not 1 <= copies <= 500: issues.append("copies must be between 1 and 500")
+        elif accepted_copy_count + copies > MAX_IMPORT_TOTAL_COPIES:
+            issues.append(f"an import can include at most {MAX_IMPORT_TOTAL_COPIES:,} copies in total")
         author_id = known_authors.get(data.get("author", "").casefold())
         category_name = (data.get("category") or data.get("subject", "")).strip()
         category_id = known_categories.get(category_name.casefold())
@@ -113,6 +117,7 @@ def _validated_import_rows(rows):
         if issues:
             errors.append({"line": line, "isbn": isbn, "messages": issues})
         else:
+            accepted_copy_count += copies
             valid.append({"isbn": normalized, "title": title, "publication_year": year, "copies": copies,
                           "author_id": author_id, "category_id": category_id, "publisher_id": publisher_id,
                           "course_id": course_id, "course_name": data.get("course", "").strip(),
