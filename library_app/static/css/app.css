@@ -604,7 +604,7 @@ h1 { font-weight:600; }
 .catalog-empty>span { color:#567452; background:#e8eddf; }
 .catalog-pagination { margin-top:20px; }
 .catalog-pagination .page-link { border-color:#e6e2d8; background:#fffefa; }
-.catalog-filter-grid { grid-template-columns:minmax(190px,2fr) repeat(4,minmax(105px,1fr)) minmax(86px,auto); }
+.catalog-filter-grid { grid-template-columns:minmax(190px,2fr) repeat(5,minmax(90px,1fr)) minmax(86px,auto); }
 .catalog-search-field { grid-column:span 1; }
 .catalog-edit-panel { border-color:#e9e5dc; border-radius:17px; background:#fffefa; }
 .dashboard-metrics { gap:11px; margin:24px 0 15px; }

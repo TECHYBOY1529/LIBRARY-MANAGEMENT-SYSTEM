@@ -85,9 +85,28 @@ def test_password_reset_is_expiring_hashed_and_one_use(client, records, app, mon
     assert b"Your password has been reset" in response.data
     with app.app_context():
         assert db.session.get(User, records["member_id"]).check_password("NewMemberPassword!2026")
+        assert db.session.get(User, records["member_id"]).auth_version == 1
         assert PasswordResetToken.query.one().used_at is not None
-    replay = client.get(f"/password-reset/{captured['token']}", follow_redirects=True)
+    replay = client.post(f"/password-reset/{captured['token']}", data={
+        "password": "AttackerPassword!2026", "confirm_password": "AttackerPassword!2026",
+    }, follow_redirects=True)
     assert b"invalid or has expired" in replay.data
+    with app.app_context():
+        assert db.session.get(User, records["member_id"]).check_password("NewMemberPassword!2026")
+
+
+def test_admin_password_reset_increments_auth_version(app, records, monkeypatch):
+    import getpass
+
+    answers = iter(["UpdatedAdminPassword!2026", "UpdatedAdminPassword!2026"])
+    monkeypatch.setattr(getpass, "getpass", lambda _prompt: next(answers))
+    result = app.test_cli_runner().invoke(args=["set-password", "admin@test.edu"])
+    assert result.exit_code == 0
+    assert "Password updated." in result.output
+    with app.app_context():
+        admin = db.session.get(User, records["admin_id"])
+        assert admin.auth_version == 1
+        assert admin.check_password("UpdatedAdminPassword!2026")
 
 
 def test_catalog_csv_import_requires_validated_preview(client, records, app):
@@ -147,6 +166,8 @@ def test_report_exports_csv_excel_pdf_and_role_permissions(client, records):
     workbook = load_workbook(io.BytesIO(xlsx_response.data), read_only=True, data_only=True)
     rows = list(workbook.active.iter_rows(values_only=True))
     assert rows[0][0] == "ISBN" and rows[1][1] == "Test Book"
+    assert rows[0][3:6] == ("Course", "Subject", "Semester")
+    assert rows[1][3] == "Test BSc Course" and rows[1][5] == 2
     pdf_response = client.get("/reports/export/inventory/pdf", query_string=period)
     assert pdf_response.status_code == 200 and pdf_response.data.startswith(b"%PDF")
     assert client.get("/reports/export/inventory/csv", query_string={"start_date": "2026-99-99"}).status_code == 400

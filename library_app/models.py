@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 
+from flask import session
 from flask_login import UserMixin
 from sqlalchemy import CheckConstraint, Index, UniqueConstraint
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -17,6 +18,7 @@ class User(UserMixin, db.Model):
     full_name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
+    auth_version = db.Column(db.Integer, nullable=False, default=0, server_default=db.text("0"))
     role = db.Column(db.String(20), nullable=False, default="member", index=True)
     active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
@@ -32,7 +34,14 @@ class User(UserMixin, db.Model):
 @login_manager.user_loader
 def load_user(user_id):
     user = db.session.get(User, int(user_id))
-    return user if user and user.active else None
+    if not user or not user.active:
+        return None
+    if session.get("_auth_version") != user.auth_version:
+        session.pop("_user_id", None)
+        session.pop("_fresh", None)
+        session.pop("_auth_version", None)
+        return None
+    return user
 
 
 class Author(db.Model):
@@ -290,6 +299,16 @@ class SystemSetting(db.Model):
     updated_by_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"))
     updated_at = db.Column(db.DateTime, nullable=False, default=utcnow, onupdate=utcnow)
     updated_by = db.relationship(User)
+
+
+class InstitutionalLibraryFact(db.Model):
+    """Public, source-attributed institutional facts; separate from live inventory."""
+    __tablename__ = "institutional_library_facts"
+    fact_key = db.Column(db.String(120), primary_key=True)
+    fact_value = db.Column(db.Text, nullable=False)
+    source_url = db.Column(db.String(500), nullable=False)
+    source_checked_on = db.Column(db.Date, nullable=False)
+    source_note = db.Column(db.Text, nullable=False, default="")
 
 
 class BugIncident(db.Model):

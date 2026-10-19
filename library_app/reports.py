@@ -38,9 +38,13 @@ def csv_response(filename, headers, rows):
 @bp.get("/inventory.csv")
 @roles_required("admin", "quality_manager")
 def inventory_csv():
-    rows = Book.query.order_by(Book.title).all()
-    return csv_response("inventory-report.csv", ["ISBN", "Title", "Author", "Category", "Publisher", "Year", "Total copies", "Available copies"],
-                        [[b.isbn, b.title, b.author.name, b.category.name, b.publisher.name, b.publication_year, b.total_copies, b.available_copies] for b in rows])
+    rows = (Book.query.options(joinedload(Book.author), joinedload(Book.category), joinedload(Book.course),
+                               joinedload(Book.publisher), selectinload(Book.copies))
+            .order_by(Book.title).all())
+    return csv_response("inventory-report.csv", ["ISBN", "Title", "Author", "Course", "Subject", "Semester", "Publisher", "Year", "Total copies", "Available copies"],
+                        [[b.isbn, b.title, b.author.name, b.course.name if b.course else "", b.category.name,
+                          b.semester if b.semester else "", b.publisher.name, b.publication_year,
+                          b.total_copies, b.available_copies] for b in rows])
 
 
 @bp.get("/loans.csv")
@@ -149,11 +153,12 @@ def _between(field, start, end):
 def _report_dataset(kind, start, end):
     lower, upper = _date_bounds(start, end)
     if kind == "inventory":
-        books = (Book.query.options(joinedload(Book.author), joinedload(Book.category), joinedload(Book.publisher),
+        books = (Book.query.options(joinedload(Book.author), joinedload(Book.category), joinedload(Book.course), joinedload(Book.publisher),
                                     selectinload(Book.copies)).order_by(Book.title).limit(25001).all())
-        rows = [[book.isbn, book.title, book.author.name, book.category.name, book.publisher.name,
+        rows = [[book.isbn, book.title, book.author.name, book.course.name if book.course else "",
+                 book.category.name, book.semester if book.semester else "", book.publisher.name,
                  book.publication_year, book.total_copies, book.available_copies] for book in books]
-        return "Inventory report", ["ISBN", "Title", "Author", "Category", "Publisher", "Year", "Total copies", "Available copies"], rows
+        return "Inventory report", ["ISBN", "Title", "Author", "Course", "Subject", "Semester", "Publisher", "Year", "Total copies", "Available copies"], rows
     if kind == "loans":
         records = (Loan.query.filter(*_between(Loan.issued_at, start, end))
                    .options(joinedload(Loan.member), joinedload(Loan.copy).joinedload(BookCopy.book))

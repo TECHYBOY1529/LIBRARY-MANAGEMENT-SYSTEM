@@ -4,6 +4,7 @@ import json
 import math
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import click
 from dotenv import load_dotenv
@@ -65,11 +66,21 @@ def create_app(test_config=None):
         if not secret_key or len(secret_key) < 32 or secret_key.startswith("replace-"):
             raise RuntimeError("Production requires SECRET_KEY to be set to a random value of at least 32 characters.")
         if not app.config["SESSION_COOKIE_SECURE"]:
-            app.logger.warning("SESSION_COOKIE_SECURE is disabled in production.")
+            raise RuntimeError("Production requires SESSION_COOKIE_SECURE=true so authentication cookies are sent only over HTTPS.")
         if app.config["RATELIMIT_STORAGE_URI"] == "memory://":
-            app.logger.warning("Rate-limit storage is in memory. Configure Redis for shared limits across restarts or instances.")
+            raise RuntimeError("Production requires shared rate-limit storage. Configure Redis with RATELIMIT_STORAGE_URI.")
+        public_url = urlsplit(app.config["PUBLIC_BASE_URL"])
+        if (public_url.scheme != "https" or not public_url.hostname
+                or public_url.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+                or public_url.username or public_url.password or public_url.path not in {"", "/"}
+                or public_url.query or public_url.fragment):
+            raise RuntimeError("Production requires PUBLIC_BASE_URL to be a public HTTPS origin without credentials, query, or fragment.")
+        if app.config["MAIL_SERVER"] and not app.config["MAIL_USE_TLS"]:
+            raise RuntimeError("Production SMTP must use STARTTLS; set MAIL_USE_TLS=true.")
         if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite:"):
             app.logger.warning("SQLite production mode requires a persistent mounted volume, regular backups, and one application instance.")
+        if not app.config["MAIL_SERVER"] or not app.config["MAIL_SENDER"]:
+            app.logger.warning("Password-reset email is not configured; users will need administrator assistance to regain access.")
     if not 1 <= app.config["DEFAULT_LOAN_DAYS"] <= 365:
         raise ValueError("DEFAULT_LOAN_DAYS must be from 1 to 365.")
     if not math.isfinite(app.config["FINE_PER_DAY"]) or app.config["FINE_PER_DAY"] < 0:
@@ -295,6 +306,7 @@ def create_app(test_config=None):
                 print("Password not changed. Use 10–256 characters and enter it twice identically.")
                 return
             user.set_password(first)
+            user.auth_version = (user.auth_version or 0) + 1
             db.session.commit()
             print("Password updated.")
 

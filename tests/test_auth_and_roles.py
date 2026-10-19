@@ -52,10 +52,27 @@ def test_account_profile_and_password_update(client, records, app):
         "new_password": "UpdatedPassword!2026",
         "confirm_password": "UpdatedPassword!2026",
     }, follow_redirects=True)
-    assert b"Your password has been changed" in response.data
+    assert b"Your password has been changed. Sign in again." in response.data
     with app.app_context():
         member = db.session.get(User, records["member_id"])
         assert member.check_password("UpdatedPassword!2026")
+        assert member.auth_version == 1
+
+
+def test_password_change_invalidates_other_signed_in_sessions(app, records):
+    first_client = app.test_client()
+    second_client = app.test_client()
+    login(first_client, "member@test.edu", "MemberPassword!2026")
+    login(second_client, "member@test.edu", "MemberPassword!2026")
+
+    response = first_client.post("/account", data={
+        "form_action": "password",
+        "current_password": "MemberPassword!2026",
+        "new_password": "UpdatedPassword!2026",
+        "confirm_password": "UpdatedPassword!2026",
+    }, follow_redirects=True)
+    assert b"Your password has been changed. Sign in again." in response.data
+    assert b"Good to see you." in second_client.get("/account", follow_redirects=True).data
 
 
 def test_login_is_rate_limited(client):

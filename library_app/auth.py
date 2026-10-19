@@ -105,6 +105,7 @@ def login():
         if len(password) <= 256 and user and user.check_password(password):
             session.clear()
             login_user(user, remember=False, fresh=True)
+            session["_auth_version"] = user.auth_version
             session.permanent = True
             from .services import audit
             audit(user, "login", "user", user.id)
@@ -159,14 +160,27 @@ def password_reset(token):
         elif password != confirmation:
             flash("The password and confirmation do not match.", "danger")
         else:
-            user = db.session.get(User, row.user_id)
-            user.set_password(password)
             now = utcnow()
+            claimed = PasswordResetToken.query.filter_by(id=row.id, used_at=None).filter(
+                PasswordResetToken.expires_at > now
+            ).update({"used_at": now}, synchronize_session=False)
+            if claimed != 1:
+                db.session.rollback()
+                flash("That password reset link is invalid or has expired. Request a new one.", "warning")
+                return redirect(url_for("auth.password_reset_request"))
+            user = db.session.get(User, row.user_id)
+            if not user or not user.active:
+                db.session.rollback()
+                flash("That password reset link is invalid or has expired. Request a new one.", "warning")
+                return redirect(url_for("auth.password_reset_request"))
+            user.set_password(password)
+            user.auth_version += 1
             PasswordResetToken.query.filter_by(user_id=user.id, used_at=None).update({"used_at": now})
             from .services import audit
             audit(user, "reset_password", "user", user.id)
             db.session.commit()
             logout_user()
+            session.clear()
             flash("Your password has been reset. Sign in with the new password.", "success")
             return redirect(url_for("auth.login"))
     return render_template("auth/reset_password.html", token=token)
@@ -211,11 +225,15 @@ def account():
                 flash("Choose a new password that differs from your current one.", "warning")
             else:
                 current_user.set_password(new_password)
+                current_user.auth_version += 1
                 PasswordResetToken.query.filter_by(user_id=current_user.id, used_at=None).update({"used_at": utcnow()})
                 from .services import audit
                 audit(current_user, "change_password", "user", current_user.id)
                 db.session.commit()
-                flash("Your password has been changed.", "success")
+                logout_user()
+                session.clear()
+                flash("Your password has been changed. Sign in again.", "success")
+                return redirect(url_for("auth.login"))
         else:
             flash("Choose a valid account action.", "danger")
         return redirect(url_for("auth.account"))

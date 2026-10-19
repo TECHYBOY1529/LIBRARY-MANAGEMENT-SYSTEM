@@ -16,7 +16,9 @@ erDiagram
   USERS ||--o{ NOTIFICATIONS : receives
   AUTHORS ||--o{ BOOKS : writes
   CATEGORIES ||--o{ BOOKS : groups
+  COURSES ||--o{ BOOKS : classifies
   PUBLISHERS ||--o{ BOOKS : publishes
+  USERS o|--o{ SYSTEM_SETTINGS : updates
   BOOKS ||--|{ BOOK_COPIES : contains
   BOOKS ||--o{ RESERVATIONS : requested_as
   BOOK_COPIES ||--o{ LOANS : loaned_in
@@ -28,6 +30,7 @@ erDiagram
     string full_name
     string email UK
     string password_hash
+    int auth_version
     string role
     bool active
   }
@@ -39,9 +42,26 @@ erDiagram
     int id PK
     string name UK
   }
+  COURSES {
+    int id PK
+    string name UK
+  }
   PUBLISHERS {
     int id PK
     string name UK
+  }
+  INSTITUTIONAL_LIBRARY_FACTS {
+    string fact_key PK
+    text fact_value
+    string source_url
+    date source_checked_on
+    text source_note
+  }
+  SYSTEM_SETTINGS {
+    string key PK
+    string value
+    int updated_by_id FK
+    datetime updated_at
   }
   BOOKS {
     int id PK
@@ -49,8 +69,10 @@ erDiagram
     string title
     int author_id FK
     int category_id FK
+    int course_id FK
     int publisher_id FK
     int publication_year
+    int semester
   }
   BOOK_COPIES {
     int id PK

@@ -8,8 +8,10 @@ A modular library management web application for a college or university academi
 
 - **Three roles:** Admin/Librarian, Member/Student, and Quality Manager, with backend route authorization and role-specific navigation.
 - **Catalog and inventory:** manage books, authors, subjects, courses, semesters, publishers, ISBNs, years, and individually barcoded copies. Search by title, author, ISBN, subject, course, publisher, semester, and availability; sort and paginate results; validate and preview CSV imports before commit.
+- **Institution profile data:** the `institutional_library_facts` table stores public, source-attributed Amrapali library facts separately from local books and copy records. It deliberately contains aggregate library information, not student rosters. Current webpage and 2025–26 prospectus counts are kept separately because the published totals differ; verify with the library before operational planning.
 - **Circulation:** issue/return procedures, due dates, overdue tracking, configurable fines, reservations and FIFO waitlists, member history, and in-app notifications.
 - **Member services:** self-registration, secure login/logout, own loans and fines, 1–5 categorized feedback, complaint status tracking, and notifications.
+- **Account recovery:** expiring, one-use password-reset links; password changes and administrator resets revoke existing sessions.
 - **TQM workflows:** complaint categorization, Pareto analysis, satisfaction trends, six-dimension Fishbone/Ishikawa and 5 Whys records, assigned improvement actions, physical inventory audits, and stage-gated PDCA cycles.
 - **Quality analytics:** database-backed KPIs, borrowing and satisfaction charts, problem-category counts, and PDCA status/outcomes. A KPI shows **Insufficient data** when it has no usable sample.
 - **Reports:** date-filtered inventory, borrowing/returns, overdue loans, fines, member activity, quality KPI, Pareto, and trend reports in CSV, Excel, and printable PDF.
@@ -134,6 +136,7 @@ Set these service variables in Railway (use Railway's PostgreSQL service for hos
 APP_ENV=production
 FLASK_DEBUG=false
 SECRET_KEY=<a new random value of at least 32 characters>
+PUBLIC_BASE_URL=https://<your-public-domain>
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 SESSION_COOKIE_SECURE=true
 TRUST_PROXY=true
@@ -142,7 +145,7 @@ DEFAULT_LOAN_DAYS=14
 FINE_PER_DAY=1.00
 ```
 
-Adjust the Railway reference names to match your PostgreSQL and Redis service names and available connection variables. Railway supplies `PORT`; do not define it yourself. `TRUST_PROXY=true` is intended for a trusted Railway proxy. Redis gives rate limits shared storage across app restarts and instances; `memory://` is suitable only for a local/single-process demo.
+Adjust the Railway reference names to match your PostgreSQL and Redis service names and available connection variables. Set `PUBLIC_BASE_URL` to the deployed HTTPS origin, not the placeholder above. Railway supplies `PORT`; do not define it yourself. Production startup rejects an insecure session-cookie setting, an HTTP/local public URL, or in-memory rate limits. `TRUST_PROXY=true` is intended for a trusted Railway proxy. Redis gives rate limits shared storage across app restarts and instances; `memory://` is suitable only for a local/single-process demo. Configure SMTP to enable self-service password resets; otherwise administrators must assist users.
 
 After attaching the PostgreSQL URL, run `python -m flask --app run.py db upgrade` against the deployed service before opening the public domain. Then run the `create-user` command from the service shell to create the initial staff login. Do not run `seed-demo` or `reset-demo` in production. If using SQLite instead, mount a persistent Railway volume at `/app/instance`, keep `DATABASE_URL=sqlite:///library.db`, use one application instance, and configure backups. SQLite is intended here for local and small demonstration deployments.
 
