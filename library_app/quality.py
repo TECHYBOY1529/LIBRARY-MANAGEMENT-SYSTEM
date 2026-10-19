@@ -101,8 +101,13 @@ def complaint_status(complaint_id):
     if status not in {"open", "in_progress", "resolved", "closed"}:
         flash("Choose a valid complaint status.", "danger")
     else:
+        was_resolved = row.status in {"resolved", "closed"}
         row.status = status
-        row.resolved_at = utcnow() if status in {"resolved", "closed"} else None
+        if status in {"resolved", "closed"}:
+            if not was_resolved or row.resolved_at is None:
+                row.resolved_at = utcnow()
+        else:
+            row.resolved_at = None
         from .services import notify
         if row.member_id:
             notify(row.member_id, "Complaint update", f"Complaint #{row.id} is now {status.replace('_', ' ')}.", "complaint")
