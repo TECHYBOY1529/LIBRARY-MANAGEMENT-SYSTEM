@@ -1,12 +1,24 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from time import perf_counter
 
+from flask import current_app
 from sqlalchemy import func
 
 from .extensions import db
 from .models import (AuditLog, BookCopy, Complaint, Feedback, Fine, ImprovementAction,
-                     InventoryAudit, Loan, Notification, PdcaCycle, Reservation, User, utcnow)
+                     InventoryAudit, Loan, Notification, PdcaCycle, Reservation, SystemSetting, User, utcnow)
+
+
+def configured_value(key):
+    """Read an administrator-managed setting, falling back to validated app config."""
+    row = db.session.get(SystemSetting, key)
+    raw = row.value if row else current_app.config[key]
+    if key == "DEFAULT_LOAN_DAYS":
+        return int(raw)
+    if key == "FINE_PER_DAY":
+        return Decimal(str(raw))
+    return raw
 
 
 def audit(user, action, entity, entity_id=None, detail=""):
@@ -142,18 +154,26 @@ def cancel_reservation(reservation_id, actor):
         raise
 
 
-def kpi_summary(days=90):
+def kpi_summary(days=90, start_date=None, end_date=None):
     """Calculate current KPIs from records in the trailing period; absent samples are None."""
-    since = utcnow() - timedelta(days=days)
-    feedback = Feedback.query.filter(Feedback.created_at >= since).all()
-    loans = Loan.query.filter(Loan.issued_at >= since).all()
+    if start_date and end_date:
+        since = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+        until = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+        days = (end_date - start_date).days + 1
+    else:
+        since = utcnow() - timedelta(days=days)
+        until = None
+    def in_window(field):
+        return [field >= since, field < until] if until else [field >= since]
+    feedback = Feedback.query.filter(*in_window(Feedback.created_at)).all()
+    loans = Loan.query.filter(*in_window(Loan.issued_at)).all()
     active_loans = Loan.query.filter_by(status="active").all()
-    requests = Reservation.query.filter(Reservation.created_at >= since).all()
-    resolved = Complaint.query.filter(Complaint.status.in_(["resolved", "closed"]), Complaint.resolved_at.isnot(None), Complaint.created_at >= since).all()
-    total_complaints = Complaint.query.filter(Complaint.created_at >= since).count()
+    requests = Reservation.query.filter(*in_window(Reservation.created_at)).all()
+    resolved = Complaint.query.filter(Complaint.status.in_(["resolved", "closed"]), Complaint.resolved_at.isnot(None), *in_window(Complaint.created_at)).all()
+    total_complaints = Complaint.query.filter(*in_window(Complaint.created_at)).count()
     closed_count = len(resolved)
-    actions = ImprovementAction.query.filter(ImprovementAction.status == "completed", ImprovementAction.completed_at >= since).all()
-    audit_records = InventoryAudit.query.filter(InventoryAudit.created_at >= since).all()
+    actions = ImprovementAction.query.filter(ImprovementAction.status == "completed", *in_window(ImprovementAction.completed_at)).all()
+    audit_records = InventoryAudit.query.filter(*in_window(InventoryAudit.created_at)).all()
     count_total = sum(a.checked_copies for a in audit_records)
     count_matching = sum(a.matching_copies for a in audit_records)
     return {
@@ -182,8 +202,11 @@ def kpi_summary(days=90):
     }
 
 
-def time_series_monthly(model, field, since, value_fn=None):
-    records = model.query.filter(field >= since).all()
+def time_series_monthly(model, field, since, value_fn=None, until=None):
+    query = model.query.filter(field >= since)
+    if until:
+        query = query.filter(field < until)
+    records = query.all()
     buckets = {}
     for record in records:
         dt = getattr(record, field.key)
@@ -193,11 +216,21 @@ def time_series_monthly(model, field, since, value_fn=None):
     return {"labels": labels, "values": [round(sum(buckets[label]) / len(buckets[label]), 2) if value_fn else len(buckets[label]) for label in labels]}
 
 
-def pareto_data(days=90):
-    since = utcnow() - timedelta(days=days)
-    rows = db.session.query(Complaint.category, func.count(Complaint.id)).filter(Complaint.created_at >= since).group_by(Complaint.category).all()
+def pareto_data(days=90, start_date=None, end_date=None):
+    if start_date and end_date:
+        since = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+        until = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    else:
+        since = utcnow() - timedelta(days=days)
+        until = None
+    complaint_query = db.session.query(Complaint.category, func.count(Complaint.id)).filter(Complaint.created_at >= since)
+    feedback_query = db.session.query(Feedback.category, func.count(Feedback.id)).filter(Feedback.created_at >= since)
+    if until:
+        complaint_query = complaint_query.filter(Complaint.created_at < until)
+        feedback_query = feedback_query.filter(Feedback.created_at < until)
+    rows = complaint_query.group_by(Complaint.category).all()
     counts = dict(rows)
-    fb = db.session.query(Feedback.category, func.count(Feedback.id)).filter(Feedback.created_at >= since).group_by(Feedback.category).all()
+    fb = feedback_query.group_by(Feedback.category).all()
     for category, count in fb:
         counts[category] = counts.get(category, 0) + count
     sorted_items = sorted(counts.items(), key=lambda item: item[1], reverse=True)

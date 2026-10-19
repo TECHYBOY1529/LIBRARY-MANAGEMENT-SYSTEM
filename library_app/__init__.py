@@ -47,6 +47,16 @@ def create_app(test_config=None):
         DEBUG=os.getenv("FLASK_DEBUG", "false").lower() == "true",
         RATELIMIT_STORAGE_URI=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
         TRUST_PROXY=os.getenv("TRUST_PROXY", "false").lower() == "true",
+        MAX_CONTENT_LENGTH=2 * 1024 * 1024 + 64 * 1024,
+        PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL", "http://localhost:5000").rstrip("/"),
+        MAIL_SERVER=os.getenv("MAIL_SERVER", ""),
+        MAIL_PORT=int(os.getenv("MAIL_PORT", "587")),
+        MAIL_USERNAME=os.getenv("MAIL_USERNAME", ""),
+        MAIL_PASSWORD=os.getenv("MAIL_PASSWORD", ""),
+        MAIL_SENDER=os.getenv("MAIL_SENDER", ""),
+        MAIL_USE_TLS=os.getenv("MAIL_USE_TLS", "true").lower() == "true",
+        PASSWORD_RESET_TOKEN_MINUTES=int(os.getenv("PASSWORD_RESET_TOKEN_MINUTES", "30")),
+        BACKUP_RETENTION_DAYS=int(os.getenv("BACKUP_RETENTION_DAYS", "30")),
     )
     if test_config:
         app.config.update(test_config)
@@ -64,6 +74,10 @@ def create_app(test_config=None):
         raise ValueError("DEFAULT_LOAN_DAYS must be from 1 to 365.")
     if not math.isfinite(app.config["FINE_PER_DAY"]) or app.config["FINE_PER_DAY"] < 0:
         raise ValueError("FINE_PER_DAY must be a finite, nonnegative amount.")
+    if not 5 <= app.config["PASSWORD_RESET_TOKEN_MINUTES"] <= 120:
+        raise ValueError("PASSWORD_RESET_TOKEN_MINUTES must be from 5 to 120.")
+    if not 1 <= app.config["BACKUP_RETENTION_DAYS"] <= 3650:
+        raise ValueError("BACKUP_RETENTION_DAYS must be from 1 to 3650.")
 
     if app.config["TRUST_PROXY"]:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -148,11 +162,31 @@ def create_app(test_config=None):
     def forbidden(_error):
         return render_template("error.html", code=403, message="Your account does not have permission to access that page."), 403
 
+    @app.errorhandler(413)
+    def request_too_large(error):
+        return render_template("error.html", code=413,
+                               message=getattr(error, "description", "The request is too large. Please narrow the export or use a smaller file.")), 413
+
     @app.errorhandler(500)
-    def internal_error(_error):
+    def internal_error(error):
         db.session.rollback()
-        app.logger.exception("Unhandled application error")
-        return render_template("error.html", code=500, message="Something went wrong. Please try again or contact a librarian."), 500
+        reference = secrets.token_hex(6)
+        try:
+            from flask_login import current_user
+            from .models import BugIncident
+            actor_id = current_user.id if current_user.is_authenticated else None
+            incident = BugIncident(title="Unhandled application exception",
+                                   description=f"Reference {reference}; endpoint={request.endpoint or 'unknown'}; path={request.path[:180]}",
+                                   severity="high", created_by_id=actor_id)
+            db.session.add(incident)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Could not save application error reference %s", reference)
+        app.logger.error("Unhandled application error reference %s", reference,
+                         exc_info=(type(error), error, error.__traceback__))
+        return render_template("error.html", code=500,
+                               message=f"Something went wrong. Please try again or contact a librarian. Reference: {reference}."), 500
 
     @app.cli.command("init-db")
     def init_db_command():
@@ -160,6 +194,63 @@ def create_app(test_config=None):
         with app.app_context():
             db.create_all()
         print("Database tables are ready.")
+
+    @app.cli.command("backup-db")
+    @click.option("--backup-dir", type=click.Path(file_okay=False, dir_okay=True, path_type=Path), default=None,
+                  help="Destination directory. Defaults to instance/backups.")
+    def backup_db_command(backup_dir):
+        """Create an online-consistent backup of a file-backed SQLite database."""
+        import sqlite3
+        from datetime import datetime, timezone
+        with app.app_context():
+            if not app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite:"):
+                raise click.ClickException("This command supports file-backed SQLite only. Use your PostgreSQL provider's backup tools.")
+            source_name = db.engine.url.database
+            if not source_name or source_name == ":memory:":
+                raise click.ClickException("No file-backed SQLite database is configured.")
+            source = Path(source_name)
+            if not source.is_absolute():
+                source = Path(app.instance_path) / source
+            source = source.resolve()
+            if not source.is_file():
+                raise click.ClickException(f"Database file was not found: {source}")
+            destination_dir = (Path(backup_dir) if backup_dir else Path(app.instance_path) / "backups").resolve()
+            if destination_dir == source.parent or source == destination_dir:
+                raise click.ClickException("Choose a backup directory separate from the database file.")
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            if not destination_dir.is_dir():
+                raise click.ClickException("Backup destination must be a directory.")
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            target_path = destination_dir / f"library-{stamp}.sqlite3"
+            try:
+                with sqlite3.connect(source) as src, sqlite3.connect(target_path) as dst:
+                    src.backup(dst)
+                try:
+                    target_path.chmod(0o600)
+                except OSError:
+                    pass
+                retention = app.config["BACKUP_RETENTION_DAYS"]
+                cutoff = datetime.now(timezone.utc).timestamp() - retention * 86400
+                for old in destination_dir.glob("library-*.sqlite3"):
+                    if old != target_path and old.stat().st_mtime < cutoff:
+                        old.unlink(missing_ok=True)
+            except Exception as error:
+                target_path.unlink(missing_ok=True)
+                if isinstance(error, click.ClickException):
+                    raise
+                raise click.ClickException(f"Could not create database backup: {error}") from error
+            click.echo(f"SQLite backup created: {target_path}")
+
+    @app.cli.command("purge-expired-records")
+    def purge_expired_records_command():
+        """Remove expired one-use tokens and abandoned catalog import previews."""
+        from .models import CatalogImportBatch, PasswordResetToken, utcnow
+        with app.app_context():
+            now = utcnow()
+            imports_removed = CatalogImportBatch.query.filter(CatalogImportBatch.expires_at < now).delete(synchronize_session=False)
+            tokens_removed = PasswordResetToken.query.filter(PasswordResetToken.expires_at < now).delete(synchronize_session=False)
+            db.session.commit()
+        click.echo(f"Removed {imports_removed} expired catalog previews and {tokens_removed} expired password-reset tokens.")
 
     @app.cli.command("seed-demo")
     def seed_demo_command():
