@@ -73,7 +73,8 @@ def create_app(test_config=None):
             raise RuntimeError("Production requires SECRET_KEY to be set to a random value of at least 32 characters.")
         if not app.config["SESSION_COOKIE_SECURE"]:
             raise RuntimeError("Production requires SESSION_COOKIE_SECURE=true so authentication cookies are sent only over HTTPS.")
-        if app.config["RATELIMIT_STORAGE_URI"] == "memory://":
+        rate_limit_storage = urlsplit(app.config["RATELIMIT_STORAGE_URI"])
+        if rate_limit_storage.scheme not in {"redis", "rediss"} or not rate_limit_storage.hostname:
             raise RuntimeError("Production requires shared rate-limit storage. Configure Redis with RATELIMIT_STORAGE_URI.")
         public_url = urlsplit(app.config["PUBLIC_BASE_URL"])
         if (public_url.scheme != "https" or not public_url.hostname

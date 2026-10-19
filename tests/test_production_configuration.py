@@ -36,6 +36,8 @@ def test_production_uses_secure_cookie_and_health_headers():
 @pytest.mark.parametrize(("setting", "value", "message"), [
     ("SESSION_COOKIE_SECURE", False, "SESSION_COOKIE_SECURE=true"),
     ("RATELIMIT_STORAGE_URI", "memory://", "shared rate-limit storage"),
+    ("RATELIMIT_STORAGE_URI", "memory://localhost", "shared rate-limit storage"),
+    ("RATELIMIT_STORAGE_URI", "redis://", "shared rate-limit storage"),
     ("PUBLIC_BASE_URL", "http://library.example.edu", "public HTTPS origin"),
     ("PUBLIC_BASE_URL", "https://localhost", "public HTTPS origin"),
     ("PUBLIC_BASE_URL", "https://library.example.edu/app", "public HTTPS origin"),
