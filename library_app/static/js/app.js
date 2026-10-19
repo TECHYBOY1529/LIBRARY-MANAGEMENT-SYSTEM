@@ -29,8 +29,70 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.querySelectorAll('form[data-confirm]').forEach(form => {
     form.addEventListener('submit', event => {
-      if (!window.confirm(form.dataset.confirm)) event.preventDefault();
+      if (form.dataset.confirmedOnce === 'true') {
+        delete form.dataset.confirmedOnce;
+        return;
+      }
+      event.preventDefault();
+      const dialog = document.getElementById('confirmDialog');
+      if (!dialog || typeof dialog.showModal !== 'function') {
+        if (window.confirm(form.dataset.confirm)) form.requestSubmit();
+        return;
+      }
+      const message = document.getElementById('confirmMessage');
+      if (message) message.textContent = form.dataset.confirm;
+      dialog.addEventListener('close', function resumeSubmit() {
+        dialog.removeEventListener('close', resumeSubmit);
+        if (dialog.returnValue === 'confirm') {
+          form.dataset.confirmedOnce = 'true';
+          form.requestSubmit();
+        }
+      });
+      dialog.showModal();
     });
+  });
+
+  const root = document.documentElement;
+  const preferenceKey = 'campus-library-prefs-' + (document.body.dataset.userId || 'guest');
+  let preferences = {};
+  try { preferences = JSON.parse(localStorage.getItem(preferenceKey) || '{}'); } catch (_) { preferences = {}; }
+  const themeSelect = document.getElementById('themePreference');
+  const fontSelect = document.getElementById('fontPreference');
+  const contrastToggle = document.getElementById('contrastPreference');
+  if (themeSelect) themeSelect.value = ['forest', 'light', 'dark'].includes(preferences.theme) ? preferences.theme : 'forest';
+  if (fontSelect) fontSelect.value = ['normal', 'large', 'larger'].includes(preferences.fontScale) ? preferences.fontScale : 'normal';
+  if (contrastToggle) contrastToggle.checked = Boolean(preferences.contrast);
+  const savePreferences = () => {
+    preferences = {
+      theme: themeSelect?.value || 'forest',
+      fontScale: fontSelect?.value || 'normal',
+      contrast: Boolean(contrastToggle?.checked)
+    };
+    root.dataset.theme = preferences.theme;
+    root.dataset.fontScale = preferences.fontScale;
+    root.dataset.contrast = preferences.contrast ? 'high' : 'normal';
+    try { localStorage.setItem(preferenceKey, JSON.stringify(preferences)); } catch (_) { /* Preferences remain active for this page. */ }
+  };
+  [themeSelect, fontSelect, contrastToggle].filter(Boolean).forEach(control => control.addEventListener('change', savePreferences));
+
+  const search = document.getElementById('globalSearch');
+  let shortcutPrefix = false;
+  let shortcutTimer;
+  document.addEventListener('keydown', event => {
+    const target = event.target;
+    const typing = target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      if (search) { event.preventDefault(); search.focus(); search.select(); }
+      return;
+    }
+    if (typing || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key === '/' && search) { event.preventDefault(); search.focus(); return; }
+    if (shortcutPrefix && event.key.toLowerCase() === 'd') window.location.assign('/dashboard');
+    if (shortcutPrefix && event.key.toLowerCase() === 'c') window.location.assign('/library/books');
+    if (shortcutPrefix && event.key.toLowerCase() === 'l') window.location.assign('/library/loans');
+    shortcutPrefix = event.key.toLowerCase() === 'g';
+    clearTimeout(shortcutTimer);
+    if (shortcutPrefix) shortcutTimer = setTimeout(() => { shortcutPrefix = false; }, 900);
   });
 
   document.querySelectorAll('.sortable-table thead th').forEach((header, columnIndex) => {
@@ -62,4 +124,27 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
+
+  const catalogButtons = document.querySelectorAll('[data-catalog-view]');
+  const catalogPanels = document.querySelectorAll('[data-catalog-panel]');
+  if (catalogButtons.length && catalogPanels.length) {
+    const viewKey = 'campus-library-catalog-view-' + (document.body.dataset.userId || 'guest');
+    let activeView = 'grid';
+    try {
+      const storedView = localStorage.getItem(viewKey);
+      if (storedView === 'table') activeView = storedView;
+    } catch (_) { /* Keep the default card view if storage is unavailable. */ }
+    const setCatalogView = view => {
+      activeView = view === 'table' ? 'table' : 'grid';
+      catalogPanels.forEach(panel => { panel.hidden = panel.dataset.catalogPanel !== activeView; });
+      catalogButtons.forEach(button => {
+        const selected = button.dataset.catalogView === activeView;
+        button.classList.toggle('is-active', selected);
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      });
+      try { localStorage.setItem(viewKey, activeView); } catch (_) { /* View selection still works for this page. */ }
+    };
+    catalogButtons.forEach(button => button.addEventListener('click', () => setCatalogView(button.dataset.catalogView)));
+    setCatalogView(activeView);
+  }
 });

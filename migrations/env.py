@@ -97,14 +97,34 @@ def run_migrations_online():
     connectable = get_engine()
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=get_metadata(),
-            **conf_args
-        )
+        is_sqlite = connection.dialect.name == 'sqlite'
+        if is_sqlite:
+            # SQLite table-rebuild migrations need foreign keys temporarily off;
+            # validate the constraints again before returning the connection.
+            connection.exec_driver_sql('PRAGMA foreign_keys=OFF')
+            connection.commit()
+        succeeded = False
+        try:
+            context.configure(
+                connection=connection,
+                target_metadata=get_metadata(),
+                **conf_args
+            )
 
-        with context.begin_transaction():
-            context.run_migrations()
+            with context.begin_transaction():
+                context.run_migrations()
+
+            if is_sqlite:
+                violations = connection.exec_driver_sql('PRAGMA foreign_key_check').fetchall()
+                if violations:
+                    raise RuntimeError(f'SQLite migration left foreign-key violations: {violations[:5]}')
+            succeeded = True
+        finally:
+            if is_sqlite:
+                if not succeeded:
+                    connection.rollback()
+                connection.exec_driver_sql('PRAGMA foreign_keys=ON')
+                connection.commit()
 
 
 if context.is_offline_mode():

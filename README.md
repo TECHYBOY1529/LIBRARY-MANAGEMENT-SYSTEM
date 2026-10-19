@@ -7,13 +7,14 @@ A modular library management web application for a college or university academi
 ## Features
 
 - **Three roles:** Admin/Librarian, Member/Student, and Quality Manager, with backend route authorization and role-specific navigation.
-- **Catalog and inventory:** manage books, authors, categories, publishers, ISBNs, years, and individually barcoded copies. Search by title, author, ISBN, category, and availability.
+- **Catalog and inventory:** manage books, authors, subjects, courses, semesters, publishers, ISBNs, years, and individually barcoded copies. Search by title, author, ISBN, subject, course, publisher, semester, and availability; sort and paginate results; validate and preview CSV imports before commit.
 - **Circulation:** issue/return procedures, due dates, overdue tracking, configurable fines, reservations and FIFO waitlists, member history, and in-app notifications.
 - **Member services:** self-registration, secure login/logout, own loans and fines, 1–5 categorized feedback, complaint status tracking, and notifications.
 - **TQM workflows:** complaint categorization, Pareto analysis, satisfaction trends, six-dimension Fishbone/Ishikawa and 5 Whys records, assigned improvement actions, physical inventory audits, and stage-gated PDCA cycles.
 - **Quality analytics:** database-backed KPIs, borrowing and satisfaction charts, problem-category counts, and PDCA status/outcomes. A KPI shows **Insufficient data** when it has no usable sample.
-- **Reports:** inventory, borrowing/returns, overdue loans, fines, and member-activity CSV exports.
-- **Security and quality controls:** Werkzeug password hashing, session security, CSRF protection, server-side validation, foreign-key enforcement, audit log, transaction rollback, and pytest coverage.
+- **Reports:** date-filtered inventory, borrowing/returns, overdue loans, fines, member activity, quality KPI, Pareto, and trend reports in CSV, Excel, and printable PDF.
+- **Usability and accessibility:** responsive, photo-led academic library UI with local book photography, role-specific dashboards, personal light/dark themes, high contrast, adjustable text size, keyboard navigation/search shortcuts, confirmation dialogs, due-date calendar, Help/FAQ, and About page.
+- **Security and reliability:** Werkzeug password hashing, one-use expiring password-reset links (SMTP configuration required), session security, CSRF protection, server-side validation, role checks, foreign-key enforcement, audit history, incident tracking, transaction rollback, SQLite backup command, and pytest coverage.
 - **Production foundations:** fail-closed production secret checks, secure session cookies, request throttling for login/registration, response security headers, `/healthz`, SQLAlchemy migrations, PostgreSQL support, and Gunicorn deployment.
 - **Account settings:** members and staff can update their profile and change passwords after verifying the current password.
 
@@ -48,12 +49,20 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 The `.env` file and local database are excluded by `.gitignore`. Do not commit secrets or real member data. The development defaults are not production settings.
 
+To enable password-reset emails, set `PUBLIC_BASE_URL` to the app's public HTTPS origin and configure `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SENDER`, and `MAIL_USE_TLS`. Without SMTP, the app shows the same generic response but does not expose reset tokens or send links. Use the administrator `set-password` command instead.
+
 ## Database setup and demo accounts
 
 Initialize an empty database:
 
 ```powershell
 python -m flask --app run.py init-db
+```
+
+For an existing database, apply schema updates without dropping records:
+
+```powershell
+python -m flask --app run.py db upgrade
 ```
 
 Seed clearly labeled fictional records (safe to rerun on a database that already has the demo admin):
@@ -93,6 +102,14 @@ python -m flask --app run.py create-user --email librarian@example.edu --name "L
 ```
 
 The command prompts for a password without putting it in shell history. Use `--role quality_manager` to provision a quality manager. Production mode blocks demo seeding and destructive demo resets.
+
+For a local file-backed SQLite database, create an online-consistent backup with `python -m flask --app run.py backup-db`. Backups go to `instance/backups` by default and files older than `BACKUP_RETENTION_DAYS` are pruned. PostgreSQL backups must use the hosting provider's backup tools. Expired reset tokens and abandoned import previews can be removed with `python -m flask --app run.py purge-expired-records`; this does not purge audit, circulation, member, or catalog history.
+
+### Catalog CSV format
+
+On the Book catalog page, select **Import CSV** and use the downloadable template. Required headers are `isbn,title,author,category,publisher,publication_year,copies`; `subject` can be used instead of `category`. Optional headers are `course,semester`. Course and subject names must already exist in Catalog metadata; semester must be from 1 to 12. Each import is capped at 500 rows and 2 MB, is previewed and validated before commit, and is rejected as a batch when any row has an error. Preview records expire after 30 minutes. Existing real catalog records are not assigned guessed course or semester values during migration; staff can classify them from the book editor.
+
+The six locally stored book and library photographs are used as editorial discovery imagery. They are served from `library_app/static/images/books`, so the catalog does not fetch a third-party image at runtime. The photo provider's current use terms are documented at [Unsplash License](https://unsplash.com/license).
 
 ## Run locally
 
@@ -145,7 +162,7 @@ No screenshot images were generated for this workspace run because desktop brows
 python -m pytest -v
 ```
 
-The suite covers registration and authentication, role authorization, book creation/editing and validation, issuing and returning, inventory consistency, duplicate and unavailable-loan prevention, late-fine calculation, rollback, feedback and complaints, reservation checkout, PDCA sequencing, KPI edge cases, and Pareto calculations. It uses a fresh in-memory SQLite database; it does not change the local demo database.
+The suite covers registration and authentication, role authorization, password reset, book creation/editing/import validation, settings and audit history, reporting formats and date bounds, issuing and returning, inventory consistency, duplicate and unavailable-loan prevention, late-fine calculation, rollback, feedback and complaints, reservation checkout, PDCA sequencing, KPI edge cases, and Pareto calculations. It uses a fresh in-memory SQLite database; it does not change the local demo database.
 
 ## Project structure
 
@@ -184,4 +201,4 @@ library-management-system/
 
 ## Limitations and academic use
 
-This project now includes production deployment foundations, but it is not a fully managed library service. Email verification, password-reset email, external email/SMS notifications, payment processing, and barcode hardware integrations still require institution-approved providers and operational setup. SQLite is single-instance storage; use PostgreSQL for hosted multi-worker deployments. The issue-time KPI measures the server-side issue operation, not a physical queue or total desk interaction. The dashboard withholds control limits because it does not have the consistent rational subgroups needed to calculate statistically valid limits. Replace fictional seed data with institution-approved, privacy-reviewed records before any real-world evaluation.
+This project now includes production deployment foundations, but it is not a fully managed library service. Password-reset email requires SMTP configuration; external email/SMS notifications, payment processing, barcode hardware, and institution-managed database encryption require approved providers and operational setup. SQLite is single-instance storage; use PostgreSQL for hosted multi-worker deployments. The issue-time KPI measures the server-side issue operation, not a physical queue or total desk interaction. The dashboard withholds control limits because it does not have the consistent rational subgroups needed to calculate statistically valid limits. Replace fictional seed data with institution-approved, privacy-reviewed records before any real-world evaluation.

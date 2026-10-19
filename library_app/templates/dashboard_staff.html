@@ -1,14 +1,88 @@
-{% extends 'base.html' %}{% block title %}Dashboard · Campus Library{% endblock %}{% block page_context %}Overview{% endblock %}
-{% block content %}<div class="page-heading"><div><div class="eyebrow">{{ role_label|upper }} WORKSPACE</div><h1>Good day, {{ current_user.full_name.split(' ')[0] }}</h1><p>Here’s the current picture of library service and operations.</p></div><a href="{{ url_for('quality.dashboard') }}" class="btn btn-outline-primary">Open TQM analytics <span aria-hidden="true">↗</span></a></div>
-<div class="stat-grid">
-  {% for label, value, icon, tone in [('Total titles',summary.books,'▤','blue'),('Available copies',summary.available,'✓','green'),('Registered members',summary.members,'♙','purple'),('Active loans',summary.active_loans,'⇄','amber'),('Overdue loans',summary.overdue,'◷','red'),('Pending complaints',summary.complaints,'◇','rose'),('Avg satisfaction',summary.satisfaction if summary.satisfaction is not none else 'Insufficient data','☆','teal'),('Open improvements',summary.actions,'⟳','indigo')] %}
-  <div class="stat-card"><div class="stat-top"><span>{{ label }}</span><span class="stat-icon {{ tone }}">{{ icon }}</span></div><div class="stat-value">{{ value }}{% if label=='Avg satisfaction' and summary.satisfaction is not none %}<small>/ 5</small>{% endif %}</div><div class="stat-foot">Live database measure</div></div>
-  {% endfor %}
-</div>
-<div class="section-heading"><div><div class="eyebrow">SERVICE PERFORMANCE</div><h2>Quality at a glance</h2></div><span class="period-pill">Trailing 90 days</span></div>
-<div class="card-grid-two"><section class="panel"><div class="panel-heading"><div><h3>Key performance indicators</h3><p>Measures from recorded service activity</p></div><a href="{{ url_for('quality.dashboard') }}">View details →</a></div><div class="mini-kpi-list">
-  {% for key,label,suffix in [('satisfaction','Average satisfaction','/ 5'),('availability_when_requested_pct','Availability when requested','%'),('avg_issue_processing_ms','Avg issue operation time','ms'),('avg_complaint_resolution_days','Complaint resolution time','days'),('complaint_resolution_rate_pct','Complaint resolution rate','%'),('overdue_loan_rate_pct','Overdue loan rate','%')] %}
-  <div class="mini-kpi"><span>{{ label }}</span><strong>{{ kpis[key] if kpis[key] is not none else 'Insufficient data' }}{% if kpis[key] is not none %}<small> {{ suffix }}</small>{% endif %}</strong></div>
-  {% endfor %}
-</div></section><section class="panel"><div class="panel-heading"><div><h3>Quick actions</h3><p>Keep the service moving</p></div></div><div class="quick-actions"><a href="{{ url_for('catalog.loans') }}"><b>⇄</b><span>Issue or return a book</span><i>→</i></a><a href="{{ url_for('catalog.books') }}"><b>▤</b><span>Browse inventory</span><i>→</i></a><a href="{{ url_for('quality.actions') }}"><b>✓</b><span>Review improvement actions</span><i>→</i></a><a href="{{ url_for('reports.index') }}"><b>▧</b><span>Generate a report</span><i>→</i></a></div></section></div>
+{% extends 'base.html' %}
+{% block title %}Dashboard · Campus Library{% endblock %}
+{% block page_context %}Your library{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>{% endblock %}
+{% block content %}
+<section class="dashboard-hero dashboard-reveal">
+  <div class="dashboard-hero-copy">
+    <div class="dash-live-label"><span></span> YOUR CAMPUS COLLECTION</div>
+    <h1>A little inspiration<br>for your next read.</h1>
+    <p>Explore books across courses, subjects, and semesters. Everything on these shelves comes from your library catalog.</p>
+    <div class="dashboard-hero-actions"><a class="btn dashboard-hero-primary" href="{{ url_for('catalog.books') }}">Explore the collection <span aria-hidden="true">↗</span></a><a class="dashboard-hero-link" href="{{ url_for('catalog.book_new') }}">Add a book <span aria-hidden="true">＋</span></a></div>
+  </div>
+  <div class="dashboard-hero-note"><span class="hero-note-sticker" aria-hidden="true">✳</span><small>ON YOUR SHELVES</small><strong>{{ summary.books }}<br><i>thoughtful titles</i></strong><span>Across {{ course_shelves|length }} course shelves</span></div>
+</section>
+
+{% include '_book_discovery.html' %}
+
+<section class="dashboard-metrics" aria-label="Library at a glance">
+  <a class="dashboard-metric metric-collection dashboard-reveal" href="{{ url_for('catalog.books') }}"><span class="metric-icon">▤</span><span class="metric-label">Titles in the catalog</span><strong>{{ summary.books }}</strong><small>Browse the collection <span aria-hidden="true">↗</span></small></a>
+  <a class="dashboard-metric metric-circulation dashboard-reveal" href="{{ url_for('catalog.loans') }}"><span class="metric-icon">⇄</span><span class="metric-label">Active loans</span><strong>{{ summary.active_loans }}</strong><small>Currently checked out <span aria-hidden="true">↗</span></small></a>
+  <a class="dashboard-metric metric-attention dashboard-reveal" href="{{ url_for('catalog.loans') }}"><span class="metric-icon">◷</span><span class="metric-label">Overdue today</span><strong>{{ summary.overdue }}</strong><small>{% if summary.overdue %}Needs a follow-up{% else %}Nothing overdue{% endif %} <span aria-hidden="true">↗</span></small></a>
+  <a class="dashboard-metric metric-quality dashboard-reveal" href="{{ url_for('quality.dashboard') }}"><span class="metric-icon">☆</span><span class="metric-label">Member satisfaction</span><strong>{% if summary.satisfaction is none %}—{% else %}{{ summary.satisfaction }}<small>/ 5</small>{% endif %}</strong><small>{% if summary.satisfaction is none %}No ratings recorded yet{% else %}From submitted feedback{% endif %} <span aria-hidden="true">↗</span></small></a>
+</section>
+
+<section class="dashboard-secondary-stats dashboard-reveal" aria-label="Additional service measures">
+  <div><span class="secondary-stat-icon members-icon">♙</span><span><small>Library members</small><strong>{{ summary.members }}</strong></span></div>
+  <div><span class="secondary-stat-icon complaints-icon">◇</span><span><small>Open concerns</small><strong>{{ summary.complaints }}</strong></span></div>
+  <div><span class="secondary-stat-icon actions-icon">✓</span><span><small>Improvements in progress</small><strong>{{ summary.actions }}</strong></span></div>
+  <a href="{{ url_for('quality.dashboard') }}">View service quality <span aria-hidden="true">→</span></a>
+</section>
+
+<div class="dashboard-section-title"><div><span class="eyebrow">LIBRARY PULSE</span><h2>Circulation &amp; service</h2></div><span class="dashboard-date-chip">Live from your library records</span></div>
+<section class="dashboard-board" aria-label="Library activity board">
+  <article class="dash-card dashboard-trend-card">
+    <div class="dash-card-heading"><div><span class="dash-card-kicker">CIRCULATION</span><h3>Borrowing rhythm</h3><p>Books issued across the last six months</p></div><span class="dash-card-badge">6 MONTHS</span></div>
+    {% if trend.labels %}<div class="dashboard-chart-wrap"><canvas id="borrowingRhythm" aria-label="Monthly books issued over the last six months"></canvas></div><script type="application/json" id="borrowingRhythmData">{{ trend|tojson }}</script>
+    {% else %}<div class="dashboard-chart-empty"><span aria-hidden="true">↗</span><p>Borrowing activity will appear here as new loans are recorded.</p></div>{% endif %}
+    <div class="trend-card-foot"><span><i></i> Books issued</span><a href="{{ url_for('reports.index') }}">Open reports →</a></div>
+  </article>
+
+  <article class="dash-card dashboard-focus-card">
+    <div class="dash-card-heading"><div><span class="dash-card-kicker">COLLECTION HEALTH</span><h3>Copies at a glance</h3><p>Where books are in the circulation flow</p></div><a class="dash-icon-link" href="{{ url_for('catalog.copies') }}" aria-label="Open copy inventory">↗</a></div>
+    <div class="collection-total"><strong>{{ summary.total_copies }}</strong><span>tracked copies</span></div>
+    {% set available_pct = (summary.available / (summary.total_copies or 1) * 100)|round|int %}
+    {% set loaned_pct = ((summary.active_loans / (summary.total_copies or 1)) * 100)|round|int %}
+    {% set reserved_pct = (summary.reserved_copies / (summary.total_copies or 1) * 100)|round|int %}
+    <div class="collection-bars">
+      <div class="collection-bar-row"><span><i class="bar-dot available-dot"></i>Available</span><strong>{{ summary.available }}</strong></div><div class="collection-track"><i class="collection-fill available-fill" style="width:{{ available_pct }}%"></i></div>
+      <div class="collection-bar-row"><span><i class="bar-dot loaned-dot"></i>On loan</span><strong>{{ summary.active_loans }}</strong></div><div class="collection-track"><i class="collection-fill loaned-fill" style="width:{{ loaned_pct }}%"></i></div>
+      <div class="collection-bar-row"><span><i class="bar-dot reserved-dot"></i>Reserved</span><strong>{{ summary.reserved_copies }}</strong></div><div class="collection-track"><i class="collection-fill reserved-fill" style="width:{{ reserved_pct }}%"></i></div>
+      {% if summary.maintenance_copies %}<div class="collection-bar-row"><span><i class="bar-dot maintenance-dot"></i>Maintenance</span><strong>{{ summary.maintenance_copies }}</strong></div>{% endif %}
+    </div>
+    <a class="dash-text-link" href="{{ url_for('catalog.copies') }}">Manage inventory <span aria-hidden="true">→</span></a>
+  </article>
+
+  <article class="dash-card dashboard-due-card">
+    <div class="dash-card-heading"><div><span class="dash-card-kicker">COMING UP</span><h3>Due this week</h3><p>Active loans due in the next seven days</p></div><a class="dash-icon-link" href="{{ url_for('main.due_calendar') }}" aria-label="Open due-date calendar">↗</a></div>
+    {% if due_soon %}<div class="due-list">{% for loan in due_soon %}<div class="due-list-item"><span class="due-date-stamp"><strong>{{ loan.due_date.strftime('%d') }}</strong><small>{{ loan.due_date.strftime('%b') }}</small></span><span class="due-book-title"><strong>{{ loan.copy.book.title }}</strong><small>{{ loan.member.full_name }}</small></span><span class="due-date-label">{% if loan.due_date == now_utc.date() %}Today{% else %}{{ loan.due_date.strftime('%a') }}{% endif %}</span></div>{% endfor %}</div>{% else %}<div class="dash-empty-note"><span aria-hidden="true">☼</span><p>No loans are due during the next seven days.</p></div>{% endif %}
+    <a class="dash-text-link" href="{{ url_for('main.due_calendar') }}">See the calendar <span aria-hidden="true">→</span></a>
+  </article>
+
+  <article class="dash-card dashboard-actions-card">
+    <div class="dash-card-heading"><div><span class="dash-card-kicker">QUICK PICKS</span><h3>Make a move</h3><p>Useful shortcuts for today</p></div></div>
+    <div class="dashboard-action-grid"><a href="{{ url_for('catalog.loans') }}"><span>⇄</span><strong>Issue or return</strong><small>Keep circulation moving</small></a><a href="{{ url_for('catalog.books_import') }}"><span>⇧</span><strong>Import books</strong><small>Upload a catalog CSV</small></a><a href="{{ url_for('catalog.members') }}"><span>♙</span><strong>Find a member</strong><small>Manage library accounts</small></a><a href="{{ url_for('reports.index') }}"><span>▧</span><strong>Build a report</strong><small>Explore service data</small></a></div>
+  </article>
+</section>
+{% endblock %}
+{% block scripts %}
+{% if trend.labels %}<script>
+(() => {
+  const canvas = document.getElementById('borrowingRhythm');
+  const dataElement = document.getElementById('borrowingRhythmData');
+  if (!canvas || !dataElement || typeof Chart === 'undefined') return;
+  const data = JSON.parse(dataElement.textContent);
+  new Chart(canvas, {
+    type: 'line',
+    data: { labels: data.labels, datasets: [{ data: data.values, borderColor: '#346949', backgroundColor: (context) => {
+      const chart = context.chart, area = chart.chartArea;
+      if (!area) return 'rgba(76, 140, 93, .12)';
+      const gradient = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+      gradient.addColorStop(0, 'rgba(76, 140, 93, .25)'); gradient.addColorStop(1, 'rgba(76, 140, 93, .015)');
+      return gradient;
+    }, fill: true, tension: .42, borderWidth: 3, pointRadius: 4, pointHoverRadius: 7, pointBackgroundColor: '#fff', pointBorderWidth: 2 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 900, easing: 'easeOutQuart' }, plugins: { legend: { display: false }, tooltip: { displayColors: false, backgroundColor: '#263e30', padding: 11, callbacks: { label: item => `${item.parsed.y} books issued` } } }, scales: { y: { beginAtZero: true, grid: { color: 'rgba(31, 75, 48, .07)' }, ticks: { precision: 0, color: '#7a897e' }, border: { display: false } }, x: { grid: { display: false }, ticks: { color: '#7a897e' }, border: { display: false } } } }
+  });
+})();
+</script>{% endif %}
 {% endblock %}

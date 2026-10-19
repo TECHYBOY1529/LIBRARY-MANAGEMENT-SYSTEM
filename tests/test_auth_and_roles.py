@@ -26,7 +26,7 @@ def test_login_and_logout(client, records):
     response = login(client, "member@test.edu", "MemberPassword!2026")
     assert b"MEMBER WORKSPACE" in response.data
     response = client.post("/logout", follow_redirects=True)
-    assert b"Sign in to your library" in response.data
+    assert b"Good to see you." in response.data
 
 
 def test_account_profile_and_password_update(client, records, app):
