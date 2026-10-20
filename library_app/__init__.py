@@ -447,4 +447,24 @@ def create_app(test_config=None):
             db.session.commit()
         click.echo(f"Created {role.replace('_', ' ')} account for {email}.")
 
+    @app.cli.command("audit-summary")
+    @click.option("--limit", default=10, type=int, help="Number of recent audit events to display.")
+    def audit_summary_command(limit):
+        """Print recent administrative audit trail events and security actions."""
+        from .models import AuditLog
+        with app.app_context():
+            total_events = AuditLog.query.count()
+            recent_events = (
+                AuditLog.query.order_by(AuditLog.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            click.echo("=== Security & Administrative Audit Summary ===")
+            click.echo(f"Total Logged Events: {total_events}")
+            click.echo(f"Displaying {len(recent_events)} Most Recent Records:")
+            for ev in recent_events:
+                actor_email = ev.user.email if ev.user else "system"
+                ts = ev.created_at.strftime("%Y-%m-%d %H:%M:%S") if ev.created_at else "unknown"
+                click.echo(f"[{ts}] {actor_email} -> {ev.action} on {ev.entity_type or 'general'}#{ev.entity_id or '-'} ({ev.detail})")
+
     return app
