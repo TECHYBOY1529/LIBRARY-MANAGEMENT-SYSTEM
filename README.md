@@ -142,6 +142,35 @@ On the Book catalog page, select **Import CSV** and use the downloadable templat
 
 The six locally stored book and library photographs are used as editorial discovery imagery. They are served from `library_app/static/images/books`, so the catalog does not fetch a third-party image at runtime. The photo provider's current use terms are documented at [Unsplash License](https://unsplash.com/license).
 
+### Presentation Decks & Review Visuals
+
+The project includes structured presentation decks tailored for academic progress evaluations (Review 1 & Review 2):
+- `Campus_Library_Management_System_Review_1_and_2_Pinterest_Edition.pptx`: Comprehensive 18-slide Pinterest-styled visual presentation covering problem statement, system architecture, ER diagrams, TQM Deming PDCA cycles, viva defenses, and live demo steps.
+- `Campus_Library_Simple_Pinterest_Deck.pptx`: Fast-paced, high-impact 11-slide presentation deck designed for rapid class reviews and visual viva presentations.
+- Visual assets in `library_app/static/images/presentation/`: anime-style hero library rendering, 3D circulation workflow diagram, and 3D TQM analytics artwork.
+
+### Docker Containerization
+
+Deploy the full stack (Flask + PostgreSQL 16 + Redis 7) with a single command:
+
+```powershell
+docker compose up --build -d
+```
+
+The application will be accessible at `http://localhost:5000` with automated health checks (`/healthz`).
+
+### Automated Daily Maintenance
+
+Run background database hygiene, purge temporary tokens, and refresh due-date reminders:
+
+```powershell
+python scripts/run_daily_maintenance.py
+```
+
+### Keyboard Command Palette (Ctrl+K)
+
+Press `Ctrl+K` (or `Cmd+K`) from any page to open the instant Command Palette and jump directly between catalog shelves, circulation desks, quality registers, and administrative tools.
+
 ## Run locally
 
 Stop any older server copy with `Ctrl+C` before restarting so it loads the latest project files. To use port 5002 explicitly:

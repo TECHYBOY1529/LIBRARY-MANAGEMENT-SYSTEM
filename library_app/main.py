@@ -149,14 +149,21 @@ def audit_log():
 def system_settings():
     if request.method == "POST":
         days = request.form.get("default_loan_days", type=int)
-        max_loans = request.form.get("max_active_loans", type=int)
+        raw_max = request.form.get("max_active_loans")
+        if raw_max is None or raw_max == "":
+            max_loans = int(current_app.config.get("MAX_ACTIVE_LOANS_PER_MEMBER", 5))
+        else:
+            try:
+                max_loans = int(raw_max)
+            except (ValueError, TypeError):
+                max_loans = -1
         try:
             fine = Decimal(request.form.get("fine_per_day", ""))
         except (InvalidOperation, TypeError, ValueError):
             fine = Decimal("-1")
         if days is None or not 1 <= days <= 365:
             flash("The default loan period must be between 1 and 365 days.", "danger")
-        elif max_loans is None or not 1 <= max_loans <= 50:
+        elif not 1 <= max_loans <= 50:
             flash("The maximum active loans per member must be between 1 and 50.", "danger")
         elif not fine.is_finite() or not Decimal("0") <= fine <= Decimal("100000"):
             flash("The daily fine must be a finite amount from 0 to 100,000.", "danger")
