@@ -38,9 +38,23 @@ At `/login`, choose **Student** for member accounts or **Library management** fo
 5. Start a PDCA cycle with a baseline and measurable target. Complete Do, Check, Act in order and close it with a result.
 6. Record a physical inventory sample to populate the accuracy KPI.
 
+## Presentation Decks & Visual Demonstration Materials
+
+The repository includes structured presentation slide decks and visual workflow assets prepared for academic project reviews (Review 1 and Review 2):
+
+1. **Slide Decks:**
+   - `Campus_Library_Management_System_Review_1_and_2.pptx`: Standard academic review presentation covering system architecture, ER diagrams, TQM methodology, and viva defenses.
+   - `Campus_Library_Management_System_Review_1_and_2_Pinterest_Edition.pptx`: Visual presentation deck with stylized graphic cards and layout designs.
+   - `Campus_Library_Simple_Pinterest_Deck.pptx`: Clean summary slide deck tailored for rapid walkthroughs.
+2. **Visual Presentation Assets (`library_app/static/images/presentation/`):**
+   - `circulation_workflow.jpg`: Complete visual circulation and hold-queue progression.
+   - `hero_anime.jpg`: Stylized hero illustration used in academic showcase decks.
+   - `tqm_analytics.jpg`: Infographic illustrating Deming PDCA cycles, Pareto 80/20 analysis, and Ishikawa root-cause workflows.
+
 ## Screenshots
 
-No screenshot files are checked into this repository. For a report, capture only fictional demo-data views for the Admin dashboard, TQM dashboard, and Member dashboard. Do not capture real member data.
+No screenshot files containing live member personal data are checked into this repository. For project reports and viva evaluations, use the presentation visual assets above or capture demo-data views from the Admin, TQM, and Member dashboards.
+
 
 
 ## Viva Questions & Evaluation Reference
