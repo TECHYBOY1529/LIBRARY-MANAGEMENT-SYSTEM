@@ -55,4 +55,8 @@ sequenceDiagram
 1. **System Health Check (`/healthz`):** A lightweight unauthenticated probe endpoint for container orchestration and uptime monitors returning database latency and status.
 2. **Temporary Data Purge Service:** Periodic maintenance routine (`services.purge_expired_records`) that automatically cleans up expired password-reset tokens and abandoned catalog import previews while preserving an audited record of removed entries.
 3. **Catalog & Database Integrity Diagnostics:** Automated consistency verification tools (`scripts/check_catalog_health.py` and `flask catalog-summary`) that verify relational integrity, detect orphaned copies, check active loan alignment, and audit password hashing security.
+4. **Automated Maintenance Runner (`scripts/run_daily_maintenance.py`):** Standalone CLI utility for cron, task scheduler, or container runners to execute hygiene, refresh due notifications, and generate audit logs.
+5. **Concurrency & Row-Level Locking:** High-traffic circulation operations (issuing, returning, renewing, and reserving copies) utilize pessimistic row locking (`with_for_update`) to prevent race conditions.
+6. **Zero-Dependency SVG Barcode Utilities (`library_app/barcode_utils.py`):** Generates standards-compliant Code-39 barcodes and printable physical shelf labels directly as SVG markup without external graphic binaries.
+7. **Quick Command Palette (`Ctrl+K`):** Dynamic client-side keyboard navigation palette with instant fuzzy search across all application workspaces and role-specific views.
 

@@ -19,7 +19,8 @@ At `/login`, choose **Student** for member accounts or **Library management** fo
 2. Browse the catalog and search by title, ISBN, or author; try the availability filter.
 3. Place a reservation on a title. If a copy is available, it is held and becomes ready; otherwise the request enters the waiting list.
 4. Submit a 1–5 rating and categorized feedback. Submit a concern, then check its status and notifications.
-5. Review due dates, history, reservations, and personal fines.
+5. Review due dates, borrowing history, active reservations, and personal fines. Try renewing an active non-overdue loan directly from the member dashboard.
+6. Press `Ctrl+K` from any screen to summon the quick Command Palette and jump directly between catalog shelves and account views.
 
 ### Librarian circulation
 
