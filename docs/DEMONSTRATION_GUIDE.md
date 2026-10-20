@@ -41,3 +41,21 @@ At `/login`, choose **Student** for member accounts or **Library management** fo
 ## Screenshots
 
 No screenshot files are checked into this repository. For a report, capture only fictional demo-data views for the Admin dashboard, TQM dashboard, and Member dashboard. Do not capture real member data.
+
+
+## Viva Questions & Evaluation Reference
+
+### Q1: How does the system handle database concurrency and ACID integrity?
+> **Answer:** All circulation operations (checkouts, returns, hold queue promotions, and fine ledgering) are wrapped in atomic SQLAlchemy database transactions with strict rollback handlers (`db.session.rollback()`). We enforce foreign keys and use optimistic checks on copy status transitions.
+
+### Q2: What Total Quality Management (TQM) mechanisms are implemented?
+> **Answer:**
+> - **Voice of the Customer (VoC):** 1-5 categorized ratings and complaint tracking.
+> - **Pareto 80/20 Analysis:** Dynamically aggregated defect distribution identifying vital few problem categories.
+> - **Ishikawa (Fishbone) & 5-Whys:** Root-cause analysis across People, Process, Technology, Materials, Environment, and Policy.
+> - **Kaizen Action Register:** Assigned corrective interventions with target dates and status lifecycle.
+> - **Plan-Do-Check-Act (PDCA):** Stage-gated Deming quality improvement cycles.
+> - **3-Sigma Statistical Process Control (SPC):** Upper and lower control limits computed from live operations.
+
+### Q3: How are passwords and user sessions secured?
+> **Answer:** Passwords use cryptographic salted hashing via Werkzeug (`scrypt`/`pbkdf2`). Session cookies have `HttpOnly` and `SameSite=Lax` flags enabled. All state-changing forms require cryptographic CSRF tokens, and authentication versions revoke active sessions on permission changes.
