@@ -14,3 +14,9 @@ instance/*.sqlite
 *.log
 .DS_Store
 Thumbs.db
+
+# Microsoft Office temporary lock files
+~$*.pptx
+~$*.docx
+~$*.xlsx
+
