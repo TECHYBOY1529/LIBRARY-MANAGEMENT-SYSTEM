@@ -39,8 +39,32 @@ def create_app(test_config=None):
         or os.getenv("MYSQL_URL")
         or os.getenv("POSTGRES_URL")
         or os.getenv("POSTGRESQL_URL")
-        or "sqlite:///library.db"
+        or ""
     ).strip()
+
+    if not database_url:
+        pghost = os.getenv("PGHOST")
+        pguser = os.getenv("PGUSER")
+        pgpassword = os.getenv("PGPASSWORD")
+        pgdatabase = os.getenv("PGDATABASE", "railway")
+        pgport = os.getenv("PGPORT", "5432")
+        if pghost and pguser and pgpassword:
+            database_url = f"postgresql+psycopg://{pguser}:{pgpassword}@{pghost}:{pgport}/{pgdatabase}"
+
+    if not database_url or database_url == "sqlite:///library.db":
+        instance_db = Path(app.instance_path) / "library.db"
+        try:
+            instance_db.parent.mkdir(parents=True, exist_ok=True)
+            test_file = instance_db.parent / ".test_write"
+            with open(test_file, "w") as tf:
+                tf.write("ok")
+            os.remove(test_file)
+            database_url = f"sqlite:///{instance_db.resolve().as_posix()}"
+        except OSError:
+            tmp_db = Path("/tmp") / "library.db"
+            tmp_db.parent.mkdir(parents=True, exist_ok=True)
+            database_url = f"sqlite:///{tmp_db.resolve().as_posix()}"
+
     if database_url.startswith("postgres://"):
         database_url = "postgresql+psycopg://" + database_url.removeprefix("postgres://")
     elif database_url.startswith("postgresql://"):
@@ -49,7 +73,7 @@ def create_app(test_config=None):
         database_url = "mysql+pymysql://" + database_url.removeprefix("mysql://")
     engine_options = {"pool_pre_ping": True}
     if database_url.startswith("sqlite:"):
-        engine_options["connect_args"] = {"check_same_thread": False, "timeout": 15}
+        engine_options["connect_args"] = {"check_same_thread": False, "timeout": 30}
 
     public_base = os.getenv("PUBLIC_BASE_URL")
     if not public_base:
@@ -153,6 +177,23 @@ def create_app(test_config=None):
     from .reports import bp as reports_bp
     from .main import bp as main_bp
 
+    _db_bootstrapped = False
+
+    @app.before_request
+    def auto_bootstrap_first_request():
+        nonlocal _db_bootstrapped
+        if not _db_bootstrapped:
+            try:
+                db.create_all()
+                from .models import User
+                from .seed import seed_demo
+                if not User.query.filter_by(role="admin").first():
+                    seed_demo()
+                _db_bootstrapped = True
+            except Exception as bootstrap_err:
+                app.logger.warning("Bootstrap notice: %s", bootstrap_err)
+                _db_bootstrapped = True
+
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(catalog_bp, url_prefix="/library")
@@ -237,8 +278,9 @@ def create_app(test_config=None):
             app.logger.exception("Could not save application error reference %s", reference)
         app.logger.error("Unhandled application error reference %s", reference,
                          exc_info=(type(error), error, error.__traceback__))
-        return render_template("error.html", code=500,
-                               message=f"Something went wrong. Please try again or contact a librarian. Reference: {reference}."), 500
+        raw_err = str(getattr(error, "original_exception", error))
+        user_msg = f"{raw_err} (Reference: {reference})" if raw_err else f"Something went wrong. Reference: {reference}."
+        return render_template("error.html", code=500, message=user_msg), 500
 
     @app.cli.command("init-db")
     def init_db_command():
