@@ -123,6 +123,87 @@
 <dialog class="confirm-dialog" id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
   <form method="dialog"><h2 id="confirmTitle">Please confirm</h2><p id="confirmMessage"></p><div class="confirm-actions"><button class="btn btn-light" value="cancel">Cancel</button><button class="btn btn-primary" value="confirm">Continue</button></div></form>
 </dialog>
+<dialog class="palette-dialog" id="paletteDialog" aria-label="Command palette">
+  <div class="palette-inner">
+    <div class="palette-header">
+      <span class="palette-icon" aria-hidden="true">⌕</span>
+      <input type="text" id="paletteSearch" placeholder="Type a destination or command (e.g. loans, books, pdca)..." autocomplete="off" spellcheck="false">
+      <button type="button" class="palette-close" id="paletteClose" aria-label="Close palette">Esc</button>
+    </div>
+    <div class="palette-list" id="paletteList" role="listbox">
+      <a class="palette-item" href="{{ url_for('catalog.books') }}" role="option">
+        <span class="palette-item-icon">▤</span>
+        <div class="palette-item-text"><strong>Book Catalog</strong><small>Search titles, authors, ISBNs, and physical copies</small></div>
+        <kbd>Catalog</kbd>
+      </a>
+      <a class="palette-item" href="{{ url_for('main.due_calendar') }}" role="option">
+        <span class="palette-item-icon">▦</span>
+        <div class="palette-item-text"><strong>Due-Date Calendar</strong><small>Monthly view of scheduled book returns</small></div>
+        <kbd>Calendar</kbd>
+      </a>
+      {% if current_user.role == 'member' %}
+      <a class="palette-item" href="{{ url_for('catalog.history') }}" role="option">
+        <span class="palette-item-icon">◷</span>
+        <div class="palette-item-text"><strong>My Borrowing History</strong><small>Active and completed loans</small></div>
+        <kbd>Member</kbd>
+      </a>
+      <a class="palette-item" href="{{ url_for('catalog.my_reservations') }}" role="option">
+        <span class="palette-item-icon">⌛</span>
+        <div class="palette-item-text"><strong>My Reservations</strong><small>Track hold queues and pickup availability</small></div>
+        <kbd>Member</kbd>
+      </a>
+      <a class="palette-item" href="{{ url_for('catalog.fines') }}" role="option">
+        <span class="palette-item-icon">＄</span>
+        <div class="palette-item-text"><strong>My Fines</strong><small>Settled and outstanding fine balances</small></div>
+        <kbd>Member</kbd>
+      </a>
+      {% elif current_user.role == 'admin' %}
+      <a class="palette-item" href="{{ url_for('catalog.loans') }}" role="option">
+        <span class="palette-item-icon">⇄</span>
+        <div class="palette-item-text"><strong>Loans & Checkouts</strong><small>Issue books, process returns, assess fines</small></div>
+        <kbd>Circulation</kbd>
+      </a>
+      <a class="palette-item" href="{{ url_for('catalog.copies') }}" role="option">
+        <span class="palette-item-icon">▦</span>
+        <div class="palette-item-text"><strong>Physical Copy Inventory</strong><small>Barcode tracking, condition audit, shelf locations</small></div>
+        <kbd>Inventory</kbd>
+      </a>
+      <a class="palette-item" href="{{ url_for('catalog.reservations') }}" role="option">
+        <span class="palette-item-icon">⌛</span>
+        <div class="palette-item-text"><strong>Manage Reservations</strong><small>Fulfill holds and reallocate physical copies</small></div>
+        <kbd>Circulation</kbd>
+      </a>
+      <a class="palette-item" href="{{ url_for('main.system_settings') }}" role="option">
+        <span class="palette-item-icon">⚙</span>
+        <div class="palette-item-text"><strong>System Settings</strong><small>Adjust default loan days, loan caps, and fine rates</small></div>
+        <kbd>Admin</kbd>
+      </a>
+      <a class="palette-item" href="{{ url_for('main.audit_log') }}" role="option">
+        <span class="palette-item-icon">≋</span>
+        <div class="palette-item-text"><strong>Security Audit Log</strong><small>Review system transactions and security events</small></div>
+        <kbd>Admin</kbd>
+      </a>
+      {% endif %}
+      {% if current_user.role in ['admin', 'quality_manager'] %}
+      <a class="palette-item" href="{{ url_for('quality.dashboard') }}" role="option">
+        <span class="palette-item-icon">◉</span>
+        <div class="palette-item-text"><strong>TQM Quality Dashboard</strong><small>Deming cycle, Pareto defect analysis, KPIs</small></div>
+        <kbd>TQM</kbd>
+      </a>
+      <a class="palette-item" href="{{ url_for('quality.pdca') }}" role="option">
+        <span class="palette-item-icon">⟳</span>
+        <div class="palette-item-text"><strong>PDCA Continuous Improvement</strong><small>Plan-Do-Check-Act improvement initiatives</small></div>
+        <kbd>TQM</kbd>
+      </a>
+      <a class="palette-item" href="{{ url_for('reports.index') }}" role="option">
+        <span class="palette-item-icon">▧</span>
+        <div class="palette-item-text"><strong>Statistical Reports & Exports</strong><small>Export circulation metrics in CSV and JSON</small></div>
+        <kbd>Reports</kbd>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+</dialog>
 {% else %}
 <main class="auth-shell" id="main-content">
   <section class="auth-art" aria-label="Campus Library">

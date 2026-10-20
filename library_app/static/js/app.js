@@ -76,13 +76,59 @@ document.addEventListener('DOMContentLoaded', () => {
   [themeSelect, fontSelect, contrastToggle].filter(Boolean).forEach(control => control.addEventListener('change', savePreferences));
 
   const search = document.getElementById('globalSearch');
+  const paletteDialog = document.getElementById('paletteDialog');
+  const paletteSearch = document.getElementById('paletteSearch');
+  const paletteClose = document.getElementById('paletteClose');
+  const paletteList = document.getElementById('paletteList');
+
+  const openPalette = () => {
+    if (!paletteDialog || typeof paletteDialog.showModal !== 'function') return;
+    if (paletteDialog.open) return;
+    paletteDialog.showModal();
+    if (paletteSearch) {
+      paletteSearch.value = '';
+      filterPalette('');
+      setTimeout(() => paletteSearch.focus(), 50);
+    }
+  };
+
+  const closePalette = () => {
+    if (paletteDialog && paletteDialog.open) paletteDialog.close();
+  };
+
+  if (paletteClose) paletteClose.addEventListener('click', closePalette);
+  if (paletteDialog) {
+    paletteDialog.addEventListener('click', e => {
+      if (e.target === paletteDialog) closePalette();
+    });
+  }
+
+  const filterPalette = query => {
+    if (!paletteList) return;
+    const term = query.toLowerCase().trim();
+    const items = paletteList.querySelectorAll('.palette-item');
+    items.forEach(item => {
+      const text = item.textContent.toLowerCase();
+      item.style.display = text.includes(term) ? 'flex' : 'none';
+    });
+  };
+
+  if (paletteSearch) {
+    paletteSearch.addEventListener('input', e => filterPalette(e.target.value));
+  }
   let shortcutPrefix = false;
   let shortcutTimer;
   document.addEventListener('keydown', event => {
     const target = event.target;
     const typing = target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-      if (search) { event.preventDefault(); search.focus(); search.select(); }
+      event.preventDefault();
+      if (paletteDialog) {
+        paletteDialog.open ? closePalette() : openPalette();
+      } else if (search) {
+        search.focus();
+        search.select();
+      }
       return;
     }
     if (typing || event.altKey || event.ctrlKey || event.metaKey) return;
