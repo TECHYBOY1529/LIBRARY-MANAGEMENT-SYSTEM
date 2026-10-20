@@ -48,3 +48,9 @@ sequenceDiagram
   Service->>DB: Write audit record and commit transaction
   Service-->>UI: Confirm return and fine (if any)
 ```
+
+
+## Background Data Maintenance & Health Monitoring
+
+1. **System Health Check (`/healthz`):** A lightweight unauthenticated probe endpoint for container orchestration and uptime monitors returning database latency and status.
+2. **Temporary Data Purge Service:** Periodic maintenance routine (`services.purge_expired_records`) that automatically cleans up expired password-reset tokens and abandoned catalog import previews while preserving an audited record of removed entries.
