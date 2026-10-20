@@ -104,6 +104,10 @@ erDiagram
     int loan_id FK
     decimal amount
     bool paid
+    datetime paid_at
+    string payment_method
+    string payment_notes
+    int collected_by_id FK
   }
   FEEDBACK {
     int id PK
@@ -172,6 +176,9 @@ erDiagram
 - A partial unique index prevents two active loans for one physical copy. The issue service also checks for another active loan for the same member and title.
 - A book's total/available copy count is derived from its copy rows. An active loan changes one copy from `available` to `loaned`; return changes it to `available` or `reserved` for the next waiting member.
 - A partial unique index prevents duplicate active reservations for the same member and title.
+- Active loan limits are enforced per member via configurable `MAX_ACTIVE_LOANS_PER_MEMBER` system setting.
+- Loan renewals extend active loan periods provided the book is not overdue and no waiting reservations exist.
+- Settled fines track timestamps, payment methods (cash, card, online), collector IDs, and transaction audit entries.
 - Rating, role, status, fine amount, and inventory audit counts have database checks in addition to request validation.
 - Issue and return update the loan, copy, fine, reservation, audit, and notification records within one SQLAlchemy transaction. Exceptions roll the transaction back.
 - `inventory_audits` holds physical spot-check samples. The accuracy KPI is based on these samples rather than assuming the database is correct.
