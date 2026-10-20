@@ -75,6 +75,38 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   [themeSelect, fontSelect, contrastToggle].filter(Boolean).forEach(control => control.addEventListener('change', savePreferences));
 
+  const updateChartsTheme = () => {
+    if (typeof Chart === 'undefined' || !Chart.instances) return;
+    const isDark = root.dataset.theme === 'dark';
+    const isHighContrast = root.dataset.contrast === 'high';
+    const gridColor = isDark ? 'rgba(255, 255, 255, 0.12)' : (isHighContrast ? '#94a3b8' : '#e2e8f0');
+    const tickColor = isDark ? '#cbd5e1' : (isHighContrast ? '#0f172a' : '#64748b');
+
+    Object.values(Chart.instances).forEach(chart => {
+      try {
+        if (chart.options && chart.options.scales) {
+          ['x', 'y'].forEach(axis => {
+            if (chart.options.scales[axis]) {
+              if (chart.options.scales[axis].grid) chart.options.scales[axis].grid.color = gridColor;
+              if (chart.options.scales[axis].ticks) chart.options.scales[axis].ticks.color = tickColor;
+            }
+          });
+          chart.update();
+        }
+      } catch (_) {}
+    });
+  };
+
+  const themeObserver = new MutationObserver(mutations => {
+    for (const m of mutations) {
+      if (m.attributeName === 'data-theme' || m.attributeName === 'data-contrast') {
+        updateChartsTheme();
+        break;
+      }
+    }
+  });
+  themeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme', 'data-contrast'] });
+
   const search = document.getElementById('globalSearch');
   const paletteDialog = document.getElementById('paletteDialog');
   const paletteSearch = document.getElementById('paletteSearch');
