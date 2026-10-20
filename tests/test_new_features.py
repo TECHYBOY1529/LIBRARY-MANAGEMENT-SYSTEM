@@ -335,3 +335,46 @@ def test_admin_pages_and_upload_permissions(client, records):
     login(client, "admin@test.edu", "AdminPassword!2026")
     for path in ["/system-settings", "/audit-log", "/incidents", "/library/books/import", "/reports/"]:
         assert client.get(path).status_code == 200, path
+
+
+def test_expired_records_purge_and_audit(app, records):
+    from library_app.models import CatalogImportBatch, PasswordResetToken, AuditLog, utcnow
+    from library_app.services import expired_record_counts, purge_expired_records
+    from datetime import timedelta
+
+    with app.app_context():
+        past = utcnow() - timedelta(hours=2)
+        future = utcnow() + timedelta(hours=2)
+
+        # Expired token and valid token
+        expired_token = PasswordResetToken(user_id=1, token_hash="exp_hash", expires_at=past)
+        valid_token = PasswordResetToken(user_id=1, token_hash="val_hash", expires_at=future)
+        # Expired batch and valid batch
+        expired_batch = CatalogImportBatch(owner_id=1, filename="old.csv", rows_json="[]", expires_at=past)
+        valid_batch = CatalogImportBatch(owner_id=1, filename="new.csv", rows_json="[]", expires_at=future)
+
+        db.session.add_all([expired_token, valid_token, expired_batch, valid_batch])
+        db.session.commit()
+        exp_tok_id = expired_token.id
+        val_tok_id = valid_token.id
+        exp_bat_id = expired_batch.id
+        val_bat_id = valid_batch.id
+
+        counts = expired_record_counts()
+        assert counts["password_reset_tokens"] >= 1
+        assert counts["catalog_import_previews"] >= 1
+
+        db.session.expire_all()
+        result = purge_expired_records(source="test_runner")
+        assert result["password_reset_tokens"] >= 1
+        assert result["catalog_import_previews"] >= 1
+
+        # Check valid records remain
+        assert db.session.get(PasswordResetToken, val_tok_id) is not None
+        assert db.session.get(CatalogImportBatch, val_bat_id) is not None
+        assert db.session.get(PasswordResetToken, exp_tok_id) is None
+        assert db.session.get(CatalogImportBatch, exp_bat_id) is None
+
+        audit = AuditLog.query.filter_by(action="purge_expired_records").first()
+        assert audit is not None
+        assert "source=test_runner" in audit.detail
