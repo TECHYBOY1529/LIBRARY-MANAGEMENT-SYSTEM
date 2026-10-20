@@ -43,6 +43,22 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
+### Run in Visual Studio Code
+
+1. Open this project folder in VS Code and install the recommended Python extensions if prompted.
+2. Select the project interpreter: press `Ctrl+Shift+P`, choose **Python: Select Interpreter**, and select `.venv\Scripts\python.exe`.
+3. If this is a new local database, initialize it and optionally add fictional demo data in the integrated terminal:
+
+   ```powershell
+   python -m flask --app run.py init-db
+   python -m flask --app run.py seed-demo
+   ```
+
+   For an existing database, apply updates with `python -m flask --app run.py db upgrade` instead of initializing it.
+4. Open **Run and Debug** and press `F5`. VS Code starts the development server and opens `http://127.0.0.1:5000` in your browser. Stop it with `Shift+F5`.
+
+The launch configuration loads `.env` automatically through the app when that file exists. If you have not created it, the app uses local development defaults.
+
 Open `.env` and replace `SECRET_KEY` with a long random value before using the app beyond a local demo. For example, generate one in a terminal with:
 
 ```powershell
