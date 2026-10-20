@@ -74,6 +74,33 @@ def books():
                            availability=availability)
 
 
+@bp.get("/books/<int:book_id>")
+@login_required
+def book_detail(book_id):
+    book = db.get_or_404(Book, book_id)
+    active_loan = None
+    my_reservation = None
+    if current_user.is_authenticated and current_user.role == "member":
+        active_loan = Loan.query.join(BookCopy).filter(
+            Loan.member_id == current_user.id,
+            Loan.status == "active",
+            BookCopy.book_id == book.id
+        ).first()
+        my_reservation = Reservation.query.filter(
+            Reservation.book_id == book.id,
+            Reservation.member_id == current_user.id,
+            Reservation.status.in_(["waiting", "ready"])
+        ).first()
+    waiting_count = Reservation.query.filter_by(book_id=book.id, status="waiting").count()
+    shelf_images = ['images/books/book-stack.jpg','images/books/books-table.jpg','images/books/open-book.jpg',
+                    'images/books/reading-book.jpg','images/books/study-room.jpg','images/books/library-shelves.jpg']
+    cover_image = shelf_images[(book.id - 1) % len(shelf_images)]
+    return render_template("book_detail.html", book=book, active_loan=active_loan,
+                           my_reservation=my_reservation, waiting_count=waiting_count,
+                           cover_image=cover_image)
+
+
+
 def _validated_import_rows(rows):
     valid, errors, seen = [], [], set()
     accepted_copy_count = 0

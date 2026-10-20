@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% block title %}{{ book.title }} · Campus Library{% endblock %}
+{% block page_context %}{{ book.title }}{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <div class="eyebrow">{{ book.category.name|upper }} · SEMESTER {{ book.semester or '—' }}</div>
+    <h1>{{ book.title }}</h1>
+    <p>By <strong>{{ book.author.name }}</strong> · Published by {{ book.publisher.name }} ({{ book.publication_year }})</p>
+  </div>
+  <div>
+    <a class="btn btn-light" href="{{ url_for('catalog.books') }}">← Back to catalog</a>
+    {% if current_user.role == 'admin' %}
+    <a class="btn btn-outline-primary" href="{{ url_for('catalog.book_edit', book_id=book.id) }}">Edit book</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-md-4">
+    <div class="panel text-center">
+      <img src="{{ url_for('static', filename=cover_image) }}" alt="{{ book.title }}" class="img-fluid rounded mb-3 shadow-sm" style="max-height: 280px; width: 100%; object-fit: cover;">
+      <div class="d-flex justify-content-between align-items-center mb-2 px-2">
+        <span class="status-badge {{ 'green' if book.available_copies else 'amber' }}">
+          {{ book.available_copies }} of {{ book.total_copies }} available
+        </span>
+        <span class="badge bg-secondary">ISBN: {{ book.isbn }}</span>
+      </div>
+      {% if current_user.role == 'member' %}
+      <div class="mt-3">
+        {% if active_loan %}
+        <div class="alert alert-info py-2 mb-0">
+          <strong>You are currently borrowing this book.</strong><br>
+          <small>Due date: {{ active_loan.due_date.strftime('%b %d, %Y') }}</small>
+        </div>
+        {% elif my_reservation %}
+        <div class="alert alert-success py-2 mb-0">
+          <strong>Reservation active!</strong><br>
+          <small>Status: {{ my_reservation.status|title }}</small>
+        </div>
+        {% else %}
+        <form method="post" action="{{ url_for('catalog.reserve', book_id=book.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-primary w-100" type="submit">
+            {{ 'Reserve available copy' if book.available_copies else 'Join waitlist' }}
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-md-8">
+    <div class="panel mb-4">
+      <div class="panel-heading">
+        <div>
+          <h3>Course & Classification</h3>
+          <p>Curriculum context and academic details.</p>
+        </div>
+      </div>
+      <dl class="row mb-0">
+        <dt class="col-sm-3 text-muted">Course</dt>
+        <dd class="col-sm-9">{{ book.course.name if book.course else 'Not assigned' }}</dd>
+        <dt class="col-sm-3 text-muted">Subject / Category</dt>
+        <dd class="col-sm-9">{{ book.category.name }}</dd>
+        <dt class="col-sm-3 text-muted">Curriculum Term</dt>
+        <dd class="col-sm-9">Semester {{ book.semester if book.semester else '—' }}</dd>
+        <dt class="col-sm-3 text-muted">Waiting Holds</dt>
+        <dd class="col-sm-9">{{ waiting_count }} member{{ 's' if waiting_count != 1 else '' }} in queue</dd>
+      </dl>
+    </div>
+
+    <div class="panel">
+      <div class="panel-heading">
+        <div>
+          <h3>Physical Copy Inventory</h3>
+          <p>Every individual barcoded item for this title.</p>
+        </div>
+        <span class="badge bg-light text-dark">{{ book.copies|length }} registered items</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table clean-table mb-0">
+          <thead>
+            <tr>
+              <th>Barcode</th>
+              <th>Acquired Date</th>
+              <th>Current Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for copy in book.copies %}
+            <tr>
+              <td><code>{{ copy.barcode }}</code></td>
+              <td>{{ copy.acquired_at.strftime('%b %d, %Y') if copy.acquired_at else '—' }}</td>
+              <td>
+                <span class="status-badge {{ 'green' if copy.status=='available' else 'blue' if copy.status=='loaned' else 'amber' }}">
+                  {{ copy.status|title }}
+                </span>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="3" class="empty-table">No physical copies registered yet.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
