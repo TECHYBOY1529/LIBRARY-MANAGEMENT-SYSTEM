@@ -10,7 +10,7 @@ from .extensions import db
 from .models import (AuditLog, BookCopy, CatalogImportBatch, Complaint, Feedback, Fine,
                      ImprovementAction, InventoryAudit, Loan, Notification, PasswordResetToken,
                      PdcaCycle, Reservation, SystemSetting, User, utcnow)
-from .time_utils import library_today
+from .time_utils import calculate_overdue_days, library_today
 
 
 def configured_value(key):
@@ -125,7 +125,7 @@ def return_book(loan_id, staff_user, fine_per_day=Decimal("1.00")):
         loan.returned_at = utcnow()
         loan.returned_to_id = staff_user.id
         loan.status = "returned"
-        days_late = max(0, (library_today() - loan.due_date).days)
+        days_late = calculate_overdue_days(loan.due_date)
         amount = (Decimal(days_late) * fine_per_day).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if amount > 0:
             db.session.add(Fine(loan_id=loan.id, amount=amount))

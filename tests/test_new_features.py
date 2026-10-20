@@ -388,3 +388,18 @@ def test_catalog_summary_cli_command(app, records):
     assert "Titles: 1 | Total Copies: 1" in result.output
     assert "Available=1" in result.output
 
+
+def test_calculate_overdue_days_and_estimate_fine(app):
+    with app.app_context():
+        from library_app.time_utils import calculate_overdue_days, estimate_late_fine
+        ref = date(2026, 10, 20)
+        assert calculate_overdue_days(date(2026, 10, 25), as_of=ref) == 0
+        assert estimate_late_fine(date(2026, 10, 25), as_of=ref) == 0.0
+        assert calculate_overdue_days(date(2026, 10, 20), as_of=ref) == 0
+        assert estimate_late_fine(date(2026, 10, 20), as_of=ref) == 0.0
+        assert calculate_overdue_days(date(2026, 10, 16), as_of=ref) == 4
+        assert estimate_late_fine(date(2026, 10, 16), as_of=ref) == 5.0
+        assert estimate_late_fine(date(2026, 10, 16), daily_rate=2.50, as_of=ref) == 10.0
+        assert calculate_overdue_days(None) == 0
+
+
