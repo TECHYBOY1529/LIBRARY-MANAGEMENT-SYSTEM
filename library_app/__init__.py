@@ -276,6 +276,28 @@ def create_app(test_config=None):
             res = purge_expired_records(source="cli")
         click.echo(f"Removed {res['catalog_import_previews']} expired catalog previews and {res['password_reset_tokens']} expired password-reset tokens.")
 
+    @app.cli.command("catalog-summary")
+    def catalog_summary_command():
+        """Print an administrative summary of catalog titles, copies, circulation, and fines."""
+        from .models import Book, BookCopy, Fine, Loan, Reservation
+        from .time_utils import library_today
+        with app.app_context():
+            total_titles = Book.query.count()
+            total_copies = BookCopy.query.count()
+            available_copies = BookCopy.query.filter_by(status="available").count()
+            loaned_copies = BookCopy.query.filter_by(status="loaned").count()
+            active_loans = Loan.query.filter_by(status="active").count()
+            overdue_loans = Loan.query.filter(Loan.status == "active", Loan.due_date < library_today()).count()
+            pending_holds = Reservation.query.filter_by(status="waiting").count()
+            ready_holds = Reservation.query.filter_by(status="ready").count()
+            unpaid_fines = db.session.query(db.func.coalesce(db.func.sum(Fine.amount), 0.0)).filter_by(paid=False).scalar()
+            click.echo("=== Library Catalog & Circulation Summary ===")
+            click.echo(f"Titles: {total_titles} | Total Copies: {total_copies}")
+            click.echo(f"Copy Inventory: Available={available_copies}, Loaned={loaned_copies}")
+            click.echo(f"Circulation: Active Loans={active_loans}, Overdue={overdue_loans}")
+            click.echo(f"Reservations: Waiting={pending_holds}, Ready={ready_holds}")
+            click.echo(f"Outstanding Fines: ${float(unpaid_fines):.2f}")
+
     @app.cli.command("seed-demo")
     def seed_demo_command():
         if app.config["APP_ENV"] == "production":

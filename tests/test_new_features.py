@@ -378,3 +378,13 @@ def test_expired_records_purge_and_audit(app, records):
         audit = AuditLog.query.filter_by(action="purge_expired_records").first()
         assert audit is not None
         assert "source=test_runner" in audit.detail
+
+
+def test_catalog_summary_cli_command(app, records):
+    runner = app.test_cli_runner()
+    result = runner.invoke(args=["catalog-summary"])
+    assert result.exit_code == 0
+    assert "=== Library Catalog & Circulation Summary ===" in result.output
+    assert "Titles: 1 | Total Copies: 1" in result.output
+    assert "Available=1" in result.output
+
