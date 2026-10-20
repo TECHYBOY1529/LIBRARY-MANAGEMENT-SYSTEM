@@ -33,14 +33,39 @@ def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     runtime_environment = os.getenv("APP_ENV", "development").strip().lower()
-    database_url = os.getenv("DATABASE_URL", "sqlite:///library.db").strip()
+    database_url = (
+        os.getenv("DATABASE_URL")
+        or os.getenv("MYSQL_PRIVATE_URL")
+        or os.getenv("MYSQL_URL")
+        or os.getenv("POSTGRES_URL")
+        or os.getenv("POSTGRESQL_URL")
+        or "sqlite:///library.db"
+    ).strip()
     if database_url.startswith("postgres://"):
         database_url = "postgresql+psycopg://" + database_url.removeprefix("postgres://")
     elif database_url.startswith("postgresql://"):
         database_url = "postgresql+psycopg://" + database_url.removeprefix("postgresql://")
+    elif database_url.startswith("mysql://"):
+        database_url = "mysql+pymysql://" + database_url.removeprefix("mysql://")
     engine_options = {"pool_pre_ping": True}
     if database_url.startswith("sqlite:"):
         engine_options["connect_args"] = {"check_same_thread": False, "timeout": 15}
+
+    public_base = os.getenv("PUBLIC_BASE_URL")
+    if not public_base:
+        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN") or os.getenv("RAILWAY_STATIC_URL") or os.getenv("RENDER_EXTERNAL_HOSTNAME")
+        if railway_domain:
+            public_base = f"https://{railway_domain}"
+        else:
+            public_base = "http://localhost:5000"
+    public_base = public_base.rstrip("/")
+
+    ratelimit_uri = (
+        os.getenv("RATELIMIT_STORAGE_URI")
+        or os.getenv("REDIS_URL")
+        or os.getenv("REDIS_PRIVATE_URL")
+        or "memory://"
+    ).strip()
     app.config.from_mapping(
         APP_ENV=runtime_environment,
         SECRET_KEY=os.getenv("SECRET_KEY") or (None if runtime_environment == "production" else secrets.token_hex(32)),
@@ -55,10 +80,10 @@ def create_app(test_config=None):
         DEFAULT_LOAN_DAYS=int(os.getenv("DEFAULT_LOAN_DAYS", "14")),
         FINE_PER_DAY=float(os.getenv("FINE_PER_DAY", "1.00")),
         DEBUG=os.getenv("FLASK_DEBUG", "false").lower() == "true",
-        RATELIMIT_STORAGE_URI=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
+        RATELIMIT_STORAGE_URI=ratelimit_uri,
         TRUST_PROXY=os.getenv("TRUST_PROXY", "false").lower() == "true",
         MAX_CONTENT_LENGTH=2 * 1024 * 1024 + 64 * 1024,
-        PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL", "http://localhost:5000").rstrip("/"),
+        PUBLIC_BASE_URL=public_base,
         MAIL_SERVER=os.getenv("MAIL_SERVER", ""),
         MAIL_PORT=int(os.getenv("MAIL_PORT", "587")),
         MAIL_USERNAME=os.getenv("MAIL_USERNAME", ""),
