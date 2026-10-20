@@ -460,6 +460,22 @@ def loan_return(loan_id):
     return redirect(url_for("catalog.loans"))
 
 
+@bp.post("/loans/<int:loan_id>/renew")
+@login_required
+def loan_renew(loan_id):
+    loan = db.get_or_404(Loan, loan_id)
+    if current_user.role != "admin" and (current_user.role != "member" or loan.member_id != current_user.id):
+        abort(403)
+    from .services import renew_loan
+    try:
+        renew_loan(loan.id, current_user)
+        flash("Loan renewed successfully.", "success")
+    except ValueError as error:
+        flash(str(error), "warning")
+    return redirect(url_for("main.dashboard") if current_user.role == "member" else url_for("catalog.loans"))
+
+
+
 @bp.get("/history")
 @roles_required("admin", "member")
 def history():

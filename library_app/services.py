@@ -148,6 +148,30 @@ def return_book(loan_id, staff_user, fine_per_day=Decimal("1.00")):
         raise
 
 
+def renew_loan(loan_id, actor, extension_days=None):
+    """Extend an active loan if not overdue and no waiting reservations exist."""
+    try:
+        loan = Loan.query.filter_by(id=loan_id, status="active").with_for_update().first()
+        if not loan:
+            raise ValueError("Only an active loan can be renewed.")
+        today = library_today()
+        if loan.due_date < today:
+            raise ValueError("Overdue books cannot be renewed; please return them to the desk.")
+        waiting = Reservation.query.filter_by(book_id=loan.copy.book_id, status="waiting").first()
+        if waiting:
+            raise ValueError("Cannot renew: another member has reserved this title.")
+        days = extension_days or configured_value("DEFAULT_LOAN_DAYS")
+        loan.due_date = loan.due_date + timedelta(days=days)
+        audit(actor, "renew_loan", "loan", loan.id, f"new_due_date={loan.due_date.isoformat()}")
+        notify(loan.member_id, "Loan renewed", f"{loan.copy.book.title} has been extended to {loan.due_date.isoformat()}.", "loan_renewal")
+        db.session.commit()
+        return loan
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+
 def refresh_loan_notifications(member_id=None):
     """Create one due-soon/overdue reminder per active loan; safe to call repeatedly."""
     today = library_today()
