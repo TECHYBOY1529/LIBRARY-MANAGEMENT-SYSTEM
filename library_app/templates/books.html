@@ -32,13 +32,13 @@
 <div class="book-grid discovery-grid" data-catalog-panel="grid">
   {% for book in pagination.items %}
   <article class="book-card book-pin book-pin-size-{{ loop.index0 % 4 }}">
-    <a class="book-card-cover book-pin-photo" href="{{ url_for('catalog.books', q=book.title) }}" aria-label="Explore {{ book.title }} by {{ book.author.name }}">
+    <a class="book-card-cover book-pin-photo" href="{{ url_for('catalog.book_detail', book_id=book.id) }}" aria-label="Explore {{ book.title }} by {{ book.author.name }}">
       <img src="{{ url_for('static', filename=shelf_images[(book.id - 1) % (shelf_images|length)]) }}" alt="Books and reading materials from the {{ book.category.name }} shelf" loading="lazy">
       <span class="pin-subject">{{ book.category.name }}</span><span class="book-cover-status {{ 'is-available' if book.available_copies else 'is-unavailable' }}">{{ 'Available now' if book.available_copies else 'Currently borrowed' }}</span>
     </a>
     <div class="book-pin-copy">
       <div class="book-pin-context"><span>{{ book.course.name if book.course else 'Course not assigned' }}</span><span>{{ 'SEM ' ~ book.semester if book.semester else 'SEM —' }}</span></div>
-      <a class="book-pin-title" href="{{ url_for('catalog.books', q=book.title) }}">{{ book.title }}</a><p>by {{ book.author.name }}</p>
+      <a class="book-pin-title" href="{{ url_for('catalog.book_detail', book_id=book.id) }}">{{ book.title }}</a><p>by {{ book.author.name }}</p>
       <div class="book-pin-facts"><span>{{ book.category.name }}</span><span>{{ book.publication_year }}</span><span>{{ book.available_copies }} / {{ book.total_copies }} available</span></div>
       {% if current_user.role in ['admin', 'member'] %}<div class="book-card-actions">
         {% if current_user.role == 'admin' %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('catalog.book_edit', book_id=book.id) }}">Edit book</a><form method="post" action="{{ url_for('catalog.book_delete', book_id=book.id) }}" data-confirm="Remove this book and its copies from the catalog? This cannot be undone."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>
