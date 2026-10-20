@@ -403,3 +403,10 @@ def test_calculate_overdue_days_and_estimate_fine(app):
         assert calculate_overdue_days(None) == 0
 
 
+def test_catalog_health_checker_script():
+    from scripts.check_catalog_health import run_catalog_integrity_check
+    exit_code = run_catalog_integrity_check()
+    assert exit_code == 0
+
+
+

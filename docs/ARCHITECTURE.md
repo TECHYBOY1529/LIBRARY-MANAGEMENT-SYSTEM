@@ -54,3 +54,5 @@ sequenceDiagram
 
 1. **System Health Check (`/healthz`):** A lightweight unauthenticated probe endpoint for container orchestration and uptime monitors returning database latency and status.
 2. **Temporary Data Purge Service:** Periodic maintenance routine (`services.purge_expired_records`) that automatically cleans up expired password-reset tokens and abandoned catalog import previews while preserving an audited record of removed entries.
+3. **Catalog & Database Integrity Diagnostics:** Automated consistency verification tools (`scripts/check_catalog_health.py` and `flask catalog-summary`) that verify relational integrity, detect orphaned copies, check active loan alignment, and audit password hashing security.
+

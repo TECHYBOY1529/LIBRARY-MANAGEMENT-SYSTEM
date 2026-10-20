@@ -123,6 +123,19 @@ The command prompts for a password without putting it in shell history. Use `--r
 
 For a local file-backed SQLite database, create an online-consistent backup with `python -m flask --app run.py backup-db`. Backups go to `instance/backups` by default and files older than `BACKUP_RETENTION_DAYS` are pruned. PostgreSQL backups must use the hosting provider's backup tools. Expired reset tokens and abandoned import previews can be removed with `python -m flask --app run.py purge-expired-records`; this does not purge audit, circulation, member, or catalog history.
 
+Inspect inventory and circulation metrics in the console:
+
+```powershell
+python -m flask --app run.py catalog-summary
+```
+
+Run automated integrity checks across catalog copies, active loans, and account credentials:
+
+```powershell
+python scripts/check_catalog_health.py
+```
+
+
 ### Catalog CSV format
 
 On the Book catalog page, select **Import CSV** and use the downloadable template. Required headers are `isbn,title,author,category,publisher,publication_year,copies`; `subject` can be used instead of `category`. Optional headers are `course,semester`. Course and subject names must already exist in Catalog metadata; semester must be from 1 to 12. Each import is capped at 500 rows and 2 MB, is previewed and validated before commit, and is rejected as a batch when any row has an error. Preview records expire after 30 minutes. Existing real catalog records are not assigned guessed course or semester values during migration; staff can classify them from the book editor.
