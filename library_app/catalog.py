@@ -580,10 +580,11 @@ def fine_receipt(fine_id):
 def fine_paid(fine_id):
     from .models import Fine
     fine = db.get_or_404(Fine, fine_id)
+    payment_method = request.form.get("payment_method", "cash").strip()[:30]
     fine.paid = True
-    audit(current_user, "mark_fine_paid", "fine", fine.id, str(fine.amount))
+    audit(current_user, "mark_fine_paid", "fine", fine.id, f"amount={fine.amount}; method={payment_method}")
     db.session.commit()
-    flash("Fine marked as paid.", "success")
+    flash(f"Fine marked as paid via {payment_method.replace('_', ' ').title()}.", "success")
     return redirect(url_for("catalog.fines"))
 
 
