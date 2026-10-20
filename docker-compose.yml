@@ -1,0 +1,61 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: campus-library:latest
+    container_name: library_web
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - APP_ENV=production
+      - PORT=5000
+      - SECRET_KEY=generate-a-strong-random-32-byte-secret-here-for-production
+      - DATABASE_URL=postgresql+psycopg://library:library_secure_pass@db:5432/library_db
+      - RATELIMIT_STORAGE_URI=redis://redis:6379/0
+      - PUBLIC_BASE_URL=https://library.campus.edu
+      - SESSION_COOKIE_SECURE=false
+      - LIBRARY_TIMEZONE=Asia/Kolkata
+      - DEFAULT_LOAN_DAYS=14
+      - MAX_ACTIVE_LOANS_PER_MEMBER=5
+      - FINE_PER_DAY=1.00
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - library_data:/app/instance
+
+  db:
+    image: postgres:16-alpine
+    container_name: library_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: library
+      POSTGRES_PASSWORD: library_secure_pass
+      POSTGRES_DB: library_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U library -d library_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: library_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:
+  library_data:
