@@ -241,6 +241,8 @@ def create_app(test_config=None):
         }
 
     app.jinja_env.filters["from_json"] = json.loads
+    from .barcode_utils import generate_code39_svg
+    app.jinja_env.filters["barcode_svg"] = generate_code39_svg
 
     @app.errorhandler(CSRFError)
     def csrf_error(error):
