@@ -7,8 +7,9 @@ from sqlalchemy import Date, case, cast, func
 from sqlalchemy.orm import joinedload
 
 from .extensions import db
-from .models import (AuditLog, BookCopy, Complaint, Feedback, Fine, ImprovementAction,
-                     InventoryAudit, Loan, Notification, PdcaCycle, Reservation, SystemSetting, User, utcnow)
+from .models import (AuditLog, BookCopy, CatalogImportBatch, Complaint, Feedback, Fine,
+                     ImprovementAction, InventoryAudit, Loan, Notification, PasswordResetToken,
+                     PdcaCycle, Reservation, SystemSetting, User, utcnow)
 from .time_utils import library_today
 
 
@@ -26,6 +27,33 @@ def configured_value(key):
 def audit(user, action, entity, entity_id=None, detail=""):
     db.session.add(AuditLog(user_id=user.id if user else None, action=action,
                             entity_type=entity, entity_id=entity_id, detail=detail[:500]))
+
+
+def expired_record_counts(now=None):
+    """Preview only the temporary records that have passed their expiry time."""
+    now = now or utcnow()
+    return {
+        "password_reset_tokens": PasswordResetToken.query.filter(PasswordResetToken.expires_at < now).count(),
+        "catalog_import_previews": CatalogImportBatch.query.filter(CatalogImportBatch.expires_at < now).count(),
+    }
+
+
+def purge_expired_records(actor=None, source="admin"):
+    """Delete only expired temporary rows, atomically, and retain an audit record."""
+    now = utcnow()
+    try:
+        imports_removed = CatalogImportBatch.query.filter(CatalogImportBatch.expires_at < now).delete(
+            synchronize_session=False)
+        tokens_removed = PasswordResetToken.query.filter(PasswordResetToken.expires_at < now).delete(
+            synchronize_session=False)
+        if imports_removed or tokens_removed:
+            audit(actor, "purge_expired_records", "temporary_data", None,
+                  f"source={source}; import_previews={imports_removed}; reset_tokens={tokens_removed}")
+        db.session.commit()
+        return {"catalog_import_previews": imports_removed, "password_reset_tokens": tokens_removed}
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def notify(user_id, title, message, kind="general", reference_key=None):

@@ -271,13 +271,10 @@ def create_app(test_config=None):
     @app.cli.command("purge-expired-records")
     def purge_expired_records_command():
         """Remove expired one-use tokens and abandoned catalog import previews."""
-        from .models import CatalogImportBatch, PasswordResetToken, utcnow
+        from .services import purge_expired_records
         with app.app_context():
-            now = utcnow()
-            imports_removed = CatalogImportBatch.query.filter(CatalogImportBatch.expires_at < now).delete(synchronize_session=False)
-            tokens_removed = PasswordResetToken.query.filter(PasswordResetToken.expires_at < now).delete(synchronize_session=False)
-            db.session.commit()
-        click.echo(f"Removed {imports_removed} expired catalog previews and {tokens_removed} expired password-reset tokens.")
+            res = purge_expired_records(source="cli")
+        click.echo(f"Removed {res['catalog_import_previews']} expired catalog previews and {res['password_reset_tokens']} expired password-reset tokens.")
 
     @app.cli.command("seed-demo")
     def seed_demo_command():
