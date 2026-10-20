@@ -564,6 +564,17 @@ def fines():
     return render_template("fines.html", fines=rows)
 
 
+@bp.get("/fines/<int:fine_id>/receipt")
+@roles_required("admin", "member")
+def fine_receipt(fine_id):
+    from .models import Fine
+    fine = db.get_or_404(Fine, fine_id)
+    if current_user.role == "member" and fine.loan.member_id != current_user.id:
+        abort(403)
+    return render_template("fine_receipt.html", fine=fine)
+
+
+
 @bp.post("/fines/<int:fine_id>/paid")
 @roles_required("admin")
 def fine_paid(fine_id):
