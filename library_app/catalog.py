@@ -552,8 +552,17 @@ def fine_paid(fine_id):
 @bp.get("/copies")
 @roles_required("admin")
 def copies():
-    rows = BookCopy.query.join(Book).order_by(Book.title, BookCopy.barcode).all()
-    return render_template("copies.html", copies=rows)
+    query = BookCopy.query.join(Book)
+    barcode_q = request.args.get("barcode", "").strip()[:50]
+    status_q = request.args.get("status", "").strip()
+    if barcode_q:
+        query = query.filter(db.or_(BookCopy.barcode.ilike(f"%{barcode_q}%"), Book.title.ilike(f"%{barcode_q}%")))
+    if status_q in {"available", "loaned", "reserved", "maintenance", "lost"}:
+        query = query.filter(BookCopy.status == status_q)
+    pagination = query.order_by(Book.title, BookCopy.barcode).paginate(
+        page=request.args.get("page", 1, type=int), per_page=25, error_out=False
+    )
+    return render_template("copies.html", pagination=pagination, barcode_q=barcode_q, status_q=status_q)
 
 
 @bp.post("/copies/<int:copy_id>/status")

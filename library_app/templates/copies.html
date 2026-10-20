@@ -1,2 +1,22 @@
 {% extends 'base.html' %}{% block title %}Copy inventory · Campus Library{% endblock %}{% block page_context %}Copy inventory{% endblock %}
-{% block content %}<div class="page-heading"><div><div class="eyebrow">PHYSICAL INVENTORY</div><h1>Copy inventory</h1><p>Each physical item has a unique barcode and status.</p></div></div><section class="panel"><div class="table-responsive"><table class="table clean-table"><thead><tr><th>Barcode</th><th>Title</th><th>ISBN</th><th>Status</th><th>Update status</th></tr></thead><tbody>{% for copy in copies %}<tr><td><code>{{ copy.barcode }}</code></td><td>{{ copy.book.title }}</td><td>{{ copy.book.isbn }}</td><td><span class="status-badge {{ 'green' if copy.status=='available' else 'blue' if copy.status=='loaned' else 'amber' }}">{{ copy.status|title }}</span></td><td><form method="post" action="{{ url_for('catalog.copy_status',copy_id=copy.id) }}" class="inline-control"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select class="form-select form-select-sm" name="status" aria-label="Status for {{ copy.barcode }}"><option value="available">Available</option><option value="maintenance">Maintenance</option><option value="lost">Lost</option></select><button class="btn btn-sm btn-outline-secondary">Save</button></form></td></tr>{% endfor %}</tbody></table></div></section>{% endblock %}
+{% block content %}<div class="page-heading"><div><div class="eyebrow">PHYSICAL INVENTORY</div><h1>Copy inventory</h1><p>Each physical item has a unique barcode and status.</p></div></div>
+<section class="panel mb-4">
+  <form method="get" class="catalog-filters" role="search">
+    <label class="search-field">
+      <span aria-hidden="true">⌕</span>
+      <input type="search" name="barcode" value="{{ barcode_q }}" placeholder="Search by barcode or title" aria-label="Search barcode">
+    </label>
+    <select class="form-select" name="status" aria-label="Filter by status">
+      <option value="">All statuses</option>
+      {% for val in ['available', 'loaned', 'reserved', 'maintenance', 'lost'] %}
+      <option value="{{ val }}" {% if status_q == val %}selected{% endif %}>{{ val|title }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-primary" type="submit">Filter</button>
+    {% if barcode_q or status_q %}
+    <a class="btn btn-light" href="{{ url_for('catalog.copies') }}">Reset</a>
+    {% endif %}
+  </form>
+</section>
+<section class="panel"><div class="table-responsive"><table class="table clean-table"><thead><tr><th>Barcode</th><th>Title</th><th>ISBN</th><th>Status</th><th>Update status</th></tr></thead><tbody>{% for copy in pagination.items %}<tr><td><code>{{ copy.barcode }}</code></td><td>{{ copy.book.title }}</td><td>{{ copy.book.isbn }}</td><td><span class="status-badge {{ 'green' if copy.status=='available' else 'blue' if copy.status=='loaned' else 'amber' }}">{{ copy.status|title }}</span></td><td><form method="post" action="{{ url_for('catalog.copy_status',copy_id=copy.id) }}" class="inline-control"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select class="form-select form-select-sm" name="status" aria-label="Status for {{ copy.barcode }}"><option value="available" {% if copy.status=='available' %}selected{% endif %}>Available</option><option value="maintenance" {% if copy.status=='maintenance' %}selected{% endif %}>Maintenance</option><option value="lost" {% if copy.status=='lost' %}selected{% endif %}>Lost</option></select><button class="btn btn-sm btn-outline-secondary">Save</button></form></td></tr>{% else %}<tr><td colspan="5" class="empty-table">No matching copies found.</td></tr>{% endfor %}</tbody></table></div>
+<div class="pagination-row"><span>{{ pagination.total }} copies</span><div>{% if pagination.has_prev %}<a class="btn btn-sm btn-light" href="{{ url_for('catalog.copies',page=pagination.prev_num,barcode=barcode_q,status=status_q) }}">Previous</a>{% endif %}<span class="page-counter">{{ pagination.page }} / {{ pagination.pages or 1 }}</span>{% if pagination.has_next %}<a class="btn btn-sm btn-light" href="{{ url_for('catalog.copies',page=pagination.next_num,barcode=barcode_q,status=status_q) }}">Next</a>{% endif %}</div></div></section>{% endblock %}
