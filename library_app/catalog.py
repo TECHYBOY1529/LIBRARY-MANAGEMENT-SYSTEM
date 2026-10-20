@@ -460,7 +460,7 @@ def reserve(book_id):
     if existing:
         flash("You already have a waiting reservation for this title.", "info")
     else:
-        copy = BookCopy.query.filter_by(book_id=book.id, status="available").order_by(BookCopy.id).first()
+        copy = BookCopy.query.filter_by(book_id=book.id, status="available").order_by(BookCopy.id).with_for_update().first()
         row = Reservation(book_id=book.id, member_id=current_user.id,
                           status="ready" if copy else "waiting", available_at_request=bool(copy),
                           fulfilled_at=utcnow() if copy else None)
