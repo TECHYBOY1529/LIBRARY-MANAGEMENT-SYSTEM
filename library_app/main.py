@@ -149,29 +149,37 @@ def audit_log():
 def system_settings():
     if request.method == "POST":
         days = request.form.get("default_loan_days", type=int)
+        max_loans = request.form.get("max_active_loans", type=int)
         try:
             fine = Decimal(request.form.get("fine_per_day", ""))
         except (InvalidOperation, TypeError, ValueError):
             fine = Decimal("-1")
         if days is None or not 1 <= days <= 365:
             flash("The default loan period must be between 1 and 365 days.", "danger")
+        elif max_loans is None or not 1 <= max_loans <= 50:
+            flash("The maximum active loans per member must be between 1 and 50.", "danger")
         elif not fine.is_finite() or not Decimal("0") <= fine <= Decimal("100000"):
             flash("The daily fine must be a finite amount from 0 to 100,000.", "danger")
         else:
             fine = fine.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            values = {"DEFAULT_LOAN_DAYS": str(days), "FINE_PER_DAY": f"{fine:.2f}"}
+            values = {
+                "DEFAULT_LOAN_DAYS": str(days),
+                "MAX_ACTIVE_LOANS_PER_MEMBER": str(max_loans),
+                "FINE_PER_DAY": f"{fine:.2f}",
+            }
             for key, value in values.items():
                 row = db.session.get(SystemSetting, key) or SystemSetting(key=key, value=value)
                 row.value, row.updated_by_id = value, current_user.id
                 db.session.add(row)
-                current_app.config[key] = days if key == "DEFAULT_LOAN_DAYS" else float(fine)
+                current_app.config[key] = max_loans if key == "MAX_ACTIVE_LOANS_PER_MEMBER" else (days if key == "DEFAULT_LOAN_DAYS" else float(fine))
             from .services import audit
-            audit(current_user, "update_system_settings", "system_setting", None, f"loan_days={days}; fine={fine:.2f}")
+            audit(current_user, "update_system_settings", "system_setting", None, f"loan_days={days}; max_loans={max_loans}; fine={fine:.2f}")
             db.session.commit()
             flash("System settings saved.", "success")
         return redirect(url_for("main.system_settings"))
     settings = {
         "default_loan_days": int(SystemSetting.query.filter_by(key="DEFAULT_LOAN_DAYS").with_entities(SystemSetting.value).scalar() or current_app.config["DEFAULT_LOAN_DAYS"]),
+        "max_active_loans": int(SystemSetting.query.filter_by(key="MAX_ACTIVE_LOANS_PER_MEMBER").with_entities(SystemSetting.value).scalar() or current_app.config.get("MAX_ACTIVE_LOANS_PER_MEMBER", 5)),
         "fine_per_day": float(SystemSetting.query.filter_by(key="FINE_PER_DAY").with_entities(SystemSetting.value).scalar() or current_app.config["FINE_PER_DAY"]),
     }
     return render_template("system_settings.html", settings=settings)

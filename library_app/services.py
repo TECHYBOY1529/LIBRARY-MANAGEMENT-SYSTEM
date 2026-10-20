@@ -17,7 +17,7 @@ def configured_value(key):
     """Read an administrator-managed setting, falling back to validated app config."""
     row = db.session.get(SystemSetting, key)
     raw = row.value if row else current_app.config[key]
-    if key == "DEFAULT_LOAN_DAYS":
+    if key in ("DEFAULT_LOAN_DAYS", "MAX_ACTIVE_LOANS_PER_MEMBER"):
         return int(raw)
     if key == "FINE_PER_DAY":
         return Decimal(str(raw))
@@ -79,6 +79,10 @@ def issue_book(member_id, book_id, staff_user, loan_days=14, reservation_id=None
         ).first()
         if active_same_title:
             raise ValueError("This member already has an active loan for that title.")
+        max_active_loans = configured_value("MAX_ACTIVE_LOANS_PER_MEMBER")
+        current_active = Loan.query.filter_by(member_id=member_id, status="active").count()
+        if current_active >= max_active_loans:
+            raise ValueError(f"Member has reached the limit of {max_active_loans} active loans.")
         reservation = None
         if reservation_id:
             reservation = (Reservation.query.filter_by(id=reservation_id, member_id=member_id,

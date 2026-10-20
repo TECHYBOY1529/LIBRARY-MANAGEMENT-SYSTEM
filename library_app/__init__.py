@@ -102,6 +102,7 @@ def create_app(test_config=None):
         PERMANENT_SESSION_LIFETIME=60 * 60 * 8,
         WTF_CSRF_TIME_LIMIT=3600,
         DEFAULT_LOAN_DAYS=int(os.getenv("DEFAULT_LOAN_DAYS", "14")),
+        MAX_ACTIVE_LOANS_PER_MEMBER=int(os.getenv("MAX_ACTIVE_LOANS_PER_MEMBER", "5")),
         FINE_PER_DAY=float(os.getenv("FINE_PER_DAY", "1.00")),
         DEBUG=os.getenv("FLASK_DEBUG", "false").lower() == "true",
         RATELIMIT_STORAGE_URI=ratelimit_uri,
@@ -147,6 +148,8 @@ def create_app(test_config=None):
             app.logger.warning("Password-reset email is not configured; users will need administrator assistance to regain access.")
     if not 1 <= app.config["DEFAULT_LOAN_DAYS"] <= 365:
         raise ValueError("DEFAULT_LOAN_DAYS must be from 1 to 365.")
+    if not 1 <= app.config["MAX_ACTIVE_LOANS_PER_MEMBER"] <= 50:
+        raise ValueError("MAX_ACTIVE_LOANS_PER_MEMBER must be from 1 to 50.")
     if not math.isfinite(app.config["FINE_PER_DAY"]) or app.config["FINE_PER_DAY"] < 0:
         raise ValueError("FINE_PER_DAY must be a finite, nonnegative amount.")
     if not 5 <= app.config["PASSWORD_RESET_TOKEN_MINUTES"] <= 120:
