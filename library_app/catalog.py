@@ -447,6 +447,14 @@ def history():
 @roles_required("member")
 def reserve(book_id):
     book = db.get_or_404(Book, book_id)
+    has_active_loan = db.session.query(Loan.id).join(BookCopy).filter(
+        Loan.member_id == current_user.id,
+        Loan.status == "active",
+        BookCopy.book_id == book.id
+    ).first()
+    if has_active_loan:
+        flash("You already have an active loan for this title.", "warning")
+        return redirect(url_for("catalog.books"))
     existing = Reservation.query.filter(Reservation.book_id == book.id, Reservation.member_id == current_user.id,
                                         Reservation.status.in_(["waiting", "ready"])).first()
     if existing:
