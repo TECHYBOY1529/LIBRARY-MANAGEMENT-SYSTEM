@@ -31,7 +31,14 @@ def _static_asset_version(static_folder, filename):
 def create_app(test_config=None):
     load_dotenv()
     app = Flask(__name__, instance_relative_config=True)
-    Path(app.instance_path).mkdir(parents=True, exist_ok=True)
+    try:
+        Path(app.instance_path).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        app.instance_path = "/tmp/instance"
+        try:
+            Path(app.instance_path).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
     runtime_environment = os.getenv("APP_ENV", "development").strip().lower()
     database_url = (
         os.getenv("DATABASE_URL")
@@ -77,7 +84,7 @@ def create_app(test_config=None):
 
     public_base = os.getenv("PUBLIC_BASE_URL")
     if not public_base:
-        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN") or os.getenv("RAILWAY_STATIC_URL") or os.getenv("RENDER_EXTERNAL_HOSTNAME")
+        railway_domain = (os.getenv("RAILWAY_PUBLIC_DOMAIN") or os.getenv("RAILWAY_STATIC_URL") or os.getenv("RENDER_EXTERNAL_HOSTNAME") or os.getenv("VERCEL_URL") or os.getenv("VERCEL_BRANCH_URL"))
         if railway_domain:
             public_base = f"https://{railway_domain}"
         else:
