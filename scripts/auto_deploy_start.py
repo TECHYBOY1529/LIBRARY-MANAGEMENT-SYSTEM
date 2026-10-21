@@ -18,8 +18,12 @@ def prepare_environment():
         or os.getenv("RAILWAY_STATIC_URL")
         or os.getenv("RENDER_EXTERNAL_HOSTNAME")
     )
-    if not os.getenv("PUBLIC_BASE_URL") and railway_domain:
-        os.environ["PUBLIC_BASE_URL"] = f"https://{railway_domain}"
+    if not os.getenv("PUBLIC_BASE_URL"):
+        if railway_domain:
+            os.environ["PUBLIC_BASE_URL"] = f"https://{railway_domain}"
+        else:
+            os.environ["PUBLIC_BASE_URL"] = "https://campus-library-production.up.railway.app"
+            print("[AUTO-DEPLOY] Note: Set temporary fallback PUBLIC_BASE_URL. Configure PUBLIC_BASE_URL or generate a Railway domain.")
 
     if not os.getenv("SECRET_KEY"):
         os.environ["SECRET_KEY"] = secrets.token_hex(32)
@@ -27,6 +31,16 @@ def prepare_environment():
 
     if "TRUST_PROXY" not in os.environ:
         os.environ["TRUST_PROXY"] = "true"
+
+    has_redis = bool(
+        os.getenv("RATELIMIT_STORAGE_URI")
+        or os.getenv("REDIS_URL")
+        or os.getenv("REDIS_PRIVATE_URL")
+    )
+    if not has_redis and os.getenv("APP_ENV") == "production":
+        print("[AUTO-DEPLOY] Warning: Redis is not detected. Setting APP_ENV=staging so deployment boots smoothly.")
+        print("[AUTO-DEPLOY] Tip: In Railway dashboard, click '+ New -> Database -> Redis' to enable shared production rate limiting.")
+        os.environ["APP_ENV"] = "staging"
 
 
 def bootstrap_database():

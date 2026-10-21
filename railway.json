@@ -5,6 +5,9 @@
   },
   "deploy": {
     "startCommand": "python scripts/auto_deploy_start.py",
-    "restartPolicyType": "ON_FAILURE"
+    "healthcheckPath": "/healthz",
+    "healthcheckTimeout": 120,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
   }
 }
